@@ -139,6 +139,47 @@ With orthography2ipa.cpp PRs #1 and #5 to #18 merged into the submodule, every e
 
 orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads, and CI runs it under ThreadSanitizer.
 
+## The package API, the plugin and the command line
+
+`include/tugaphone/tugaphone.hpp` holds `TugaPhonemizer` and the names that the Python package exports at its top level. `phonemize_sentence` and `force_accent` call the lattice engine. The deprecated `regional_dialect` argument has no effect, as in Python. `include/tugaphone/plugin.hpp` holds `TugaphoneG2PPlugin` and `SilabificadorSyllabifier`. The executable `tugaphone` is the console script `python -m tugaphone`.
+
+The goldens of these parts are these:
+
+| Corpus | Records |
+| --- | --- |
+| `phonemize_sentence` of each of the 41 lects over the 4,541 unique gold-TSV words, five contact modes in each record | 186,181 |
+| `phonemize_sentence` of each gold-TSV row and of the test strings through 7 lects | 20,453 |
+| The acceptance sentence in each lect, `is_supported`, `regional_dialect`, `force_accent`, `respell` and the constants | 552 |
+| The plugin: `syllabify`, `transcribe`, `transcribe_word` with and without a context, `force_accent` and the constants | 9,322 |
+| The command line: help at 11 `COLUMNS` values, 42 error cases at 2 widths, and 128 runs | 333 |
+
+The command-line records run `python -I -m tugaphone` and the C++ executable on the same arguments, and compare standard output, standard error and the exit status. When Python ends with a traceback, for example for an overlay file that does not exist, the record holds the exception class only, because the traceback names local paths. The C++ executable then prints one line with the same class and exits with status 1.
+
+The acceptance sentence is "Tenho 23 anos, Sr. Silva; li o Cap. XII.". The Python command line has no `--contact` flag, so the contact modes of this sentence are in the `phonemize_sentence` records. The command-line records hold the sentence in every lect, and the `--contact` arguments as the error that argparse gives.
+
+Some package and plugin records wait on the same orthography2ipa.cpp fixes as the engine records. Each record was run on orthography2ipa.cpp trees with one or more of these pull requests merged. A record waits on the smallest set of fixes that makes it match. "A or B" means that either fix alone makes it match. The table counts the distinct golden lines:
+
+| orthography2ipa.cpp fix | Lines |
+| --- | --- |
+| #12 | 6,911 |
+| #9 | 5,159 |
+| #8 or #15 | 3,007 |
+| #8 | 1,189 |
+| #15 | 99 |
+| #18 | 36 |
+| #7 or #12 | 18 |
+| Two or three fixes together | 264 |
+
+With orthography2ipa.cpp PRs #1 and #5 to #18 merged into the submodule, every package and plugin record matches.
+
+## The benchmark
+
+`tugaphone_benchmark` is the port of `scripts/benchmark.py`. It reads the gold fixtures in `tests/data/gold/`, scores the rules-only transcription of each word, and writes `benchmarks/results.json` and `docs/scoreboard.md` under the directory it runs in. `TUGAPHONE_BENCHMARK_ROOT` names another directory. `--refresh-fixtures` downloads the gold in Python. The C++ tool does not download, so it prints a message and exits with status 2.
+
+The goldens hold every fixture word with its transcription, edit distance, stress result and confusion pairs. They hold probes of the scoring helpers, including strings of 200 code points and more for the difflib "popular element" rule, `score_dialect` with 8 limits, and 31 runs of `main`. A run with no arguments gives the same summary lines and the same two report files, byte for byte.
+
+The reports that the Python repository commits at the tag do not match what its script gives with the reference packages. For example, pt-BR has a PER of 0.2448 in the committed file and 0.2365 from the script. The C++ tool reproduces the script.
+
 ## Python defects kept for parity
 
 The port keeps these defects of the reference release, because it is held at byte parity:
@@ -155,6 +196,8 @@ The port keeps these defects of the reference release, because it is held at byt
 - `AccentOverlay.from_dict` writes any name with `str()`: a null name becomes "None".
 - The tokenizer gives a grapheme and a character an `idx_in_sentence` of `-1 + idx_in_word`. The value does not add the offset of the word in the sentence.
 - `is_grapheme_silent` compares the prefix with `"m"` and tests `after[0] in "cç"` for the archaic silent p. A direct call with the prefix `"m"` returns true. `CharToken.is_silent` gives the whole word prefix, so the rule never fires for a character of a word: `assumpção` keeps its p. The `mpt` words never match, because t is not in `"cç"`.
+- `scripts/benchmark.py --limit 0` formats a missing PER with `:.4f` and raises TypeError.
+- A negative `--limit` drops the last words of each fixture, as a Python slice does.
 
 ## API inventory
 
