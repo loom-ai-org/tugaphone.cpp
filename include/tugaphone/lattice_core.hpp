@@ -48,6 +48,9 @@ void ensure_lexicon(const std::string& lect);
 std::string normalize(std::string_view text, const std::string& lect);
 
 // engine(lect): the cached engine of an orthography2ipa lect code.
+// orthography2ipa.cpp has no lock of its own: phonemize() holds a lock while
+// it transcribes, but a caller that transcribes with this engine must not do
+// so while another thread calls into tugaphone.
 const orthography2ipa::G2P& engine(const std::string& lect);
 
 // _validate_contact(contact): ValueError for a contact outside VALID_CONTACT.
