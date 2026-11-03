@@ -79,6 +79,12 @@ def pronounce_records():
         for places, scientific, digits in itertools.product((0, 1, 2, 5), (False, True),
                                                             (None, *DigitPronunciation)):
             out.append(pronounce(n, "pt-PT", places=places, scientific=scientific, digits=digits))
+    # Ten or more decimal places reach the scale words inside the fraction.
+    long_fractions = [0.1234567891234, 1.0000000001, 3.141592653589793, 2.718281828459045, 0.3333333333333333,
+                      123.45678901234, 1e-12, 9.99999999999]
+    for n in long_fractions + floats[:40]:
+        for lang, places in itertools.product(["pt-PT", "pt-BR"], (7, 10, 12, 16, 20)):
+            out.append(pronounce(n, lang, places=places))
     return out
 
 
