@@ -52,6 +52,46 @@ The data files are copied verbatim from the Python package. `set_data_dir()` or 
 | `data/loanwords.json` | data file | `data/loanwords.json` (verbatim) | phase 1 |
 <!-- /inventory:data -->
 
+## The Markov scorer
+
+`tugaphone.langdetect` scores words with markovonnx 1.0.2a1. The port holds the part of markovonnx that tugaphone uses, in `src/markov.hpp`. This part is `MarkovChain.load` of a JSON model, `Vocabulary.encode` and `decode`, `_get_probs` and `MarkovChain.perplexity`. The four bundled models in `data/langdetect/` are read from their gzip files, as `gzip.open` reads them. Sampling, training and the ONNX export are not ported, because tugaphone does not use them.
+
+Each probability is the same float64 value as the Python value. The port does the same float operations in the same order:
+
+- The count rows are float32. A row total is numpy's pairwise sum in float32.
+- The Kneser-Ney discounts are float64. The discount mass is numpy's pairwise sum in float64 of `min(discount, count)`, rounded to float32 and divided by the float32 total.
+- The interpolation term `discount_mass * (1.0 / V)` stays float32, as numpy's scalar promotion keeps it.
+- A context that has no row gives the float32 value of `1.0 / V`.
+- The perplexity adds the logarithms in sequence order and clamps each probability at 1e-30.
+
+The library compiles with `-ffp-contract=off`, so the compiler does not fuse a multiply and an add.
+
+The goldens hold, for each bundled model, three probabilities from every count row and the full rows of 12 contexts. They hold the perplexity of every gold word, contact word and test string, and of random contexts and sequences from a seeded generator. They also hold synthetic models: order 0, 1 and 3, Laplace smoothing, fractional and wide rows, duplicate count keys and malformed JSON.
+
+Known limits: a count key or a context index beyond the 64-bit integer range raises an error at load, where Python accepts it. A vocabulary without `<UNK>` fails at load. Python fails when it scores.
+
+## Language detection
+
+`tugaphone.langdetect` is ported in full, in `include/tugaphone/langdetect.hpp`. When a model is missing or does not load, `MarkovLangDetector.from_dir` returns no detector. Python returns None. `get_detector()` loads the bundled models once.
+
+The goldens hold the score and the detected language of many words. These are the gold words, the model vocabularies, the contact words and the test strings. A grid of margins from -0.5 to 3.0, with each default side, covers every twelfth word.
+
+## Code-switching
+
+`tugaphone.codeswitch` is ported in full, in `include/tugaphone/codeswitch.hpp`. `split_runs` uses the Markov detector when the models load, and the letter and stopword heuristics when they do not. The goldens cover both paths: the dumper replaces `langdetect.get_detector` with a function that returns None for the fallback path.
+
+`transcribe_contact` calls orthography2ipa.cpp for the contact lect (es-ES, fr-FR or en-US) and maps the result to Portuguese phones with the same tables. A word with an internal apostrophe needs the orthography2ipa.cpp fix in loom-ai-org/orthography2ipa.cpp#7. Without it, one record of the goldens does not match.
+
+## Accent forcing
+
+`tugaphone.accent` is ported in full, in `include/tugaphone/accent.hpp`: the respelling rules, `respell_word`, `respell`, `Transform`, `AccentOverlay` and `force_accent`.
+
+The eight default respelling rules are written as code, not as regular expressions. A user rule or a `Transform` is a regular expression that the user supplies at run time. For these, the port has an engine in `src/pyre.cpp` that gives the same matches as Python's `re` module. Its parser is a port of `re._parser`: it accepts the same syntax and raises `re.error` for the same patterns. Its matcher follows the `_sre` rules for case folding, word boundaries and `$` before a final newline. It also follows them for a repeat that matches the empty string, and for an empty match after a match in `sub`. The engine does not support `\N{...}`. It raises NotImplementedError for it.
+
+`respell_word`, `respell` and `force_accent` take the phonemizer as an argument. The default phonemizer is the lattice phonemizer, `lattice_core.phonemize`, which is not in this phase. Until it is linked, a call without a phonemizer raises NotImplementedError. The goldens use a deterministic stand-in phonemizer, which `tools/goldens/accent.py` and `tests/parity/accent.cpp` both define. The stand-in tests the hill-climb, the case restoration, the word spans and the overlay stages.
+
+The goldens hold the default rule matches over every gold word. They hold the respelling of every gold word for its own lect and for pt-PT-x-porto, and of the mixed sentences, with each dialect in turn. They also hold 240 regular expressions, valid and invalid, over Unicode subjects, with and without IGNORECASE.
+
 ## Python defects kept for parity
 
 The port keeps these defects of the reference release, because it is held at byte parity:
@@ -60,12 +100,16 @@ The port keeps these defects of the reference release, because it is held at byt
 - ovos-number-parser keeps the masculine count before a feminine ordinal scale word: feminine ordinal 2002 reads "dois milésima segunda".
 - ovos-number-parser compares the language code with its case, so "PT-PT" raises NotImplementedError.
 - `EuropeanPortuguese` and `BrazilianPortuguese` replace an empty `IRREGULAR_WORDS` with the lexicon map. The African and Timorese classes keep an empty map.
+- markovonnx takes `context[-order:]`, which is the whole context for an order-0 model. An order-0 model gives the uniform probability for every context that is not empty.
+- `Transform.from_dict` reads `ignore_case` with `bool()`, so the string "false" turns case folding on.
+- A `word` transform puts `\b` on each side of the pattern. A pattern that starts or ends with punctuation thus never matches between spaces.
+- `AccentOverlay.from_dict` writes any name with `str()`: a null name becomes "None".
 
 ## API inventory
 
 `tools/inventory.py` writes the tables below from the reference package. It lists the public module-level names, the public methods and attributes of each public class, the CLI commands and flags, and the data files. A name that a module imports from another module is listed once, in the module that defines it. For each name in a ported module, the script checks that the C++ name is declared in `include/`.
 
-The status "phase 1" means that the name is ported and in the goldens. The status "later phase" means that a later phase of the port adds it.
+The status "phase 1" or "phase 3" means that the name is ported and in the goldens. The status "later phase" means that a later phase of the port adds it.
 
 ### tugaphone (package)
 
@@ -399,11 +443,11 @@ The status "phase 1" means that the name is ported and in the goldens. The statu
 <!-- inventory:codeswitch -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
-| `is_known_loanword` | function | none yet | later phase |
-| `is_contact_word` | function | none yet | later phase |
-| `contact_language` | function | none yet | later phase |
-| `transcribe_contact` | function | none yet | later phase |
-| `split_runs` | function | none yet | later phase |
+| `is_known_loanword` | function | `tugaphone::codeswitch::is_known_loanword` | phase 3 |
+| `is_contact_word` | function | `tugaphone::codeswitch::is_contact_word` | phase 3 |
+| `contact_language` | function | `tugaphone::codeswitch::contact_language` | phase 3 |
+| `transcribe_contact` | function | `tugaphone::codeswitch::transcribe_contact` | phase 3 |
+| `split_runs` | function | `tugaphone::codeswitch::split_runs` | phase 3 |
 <!-- /inventory:codeswitch -->
 
 ### tugaphone.langdetect
@@ -411,17 +455,17 @@ The status "phase 1" means that the name is ported and in the goldens. The statu
 <!-- inventory:langdetect -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
-| `LANGS` | constant | none yet | later phase |
-| `DEFAULT_MARGIN` | constant | none yet | later phase |
-| `PORTUGUESE_KEEP` | constant | none yet | later phase |
-| `fold_diacritics` | function | none yet | later phase |
-| `is_keep_word` | function | none yet | later phase |
-| `MarkovLangDetector` | class | none yet | later phase |
-| `MarkovLangDetector.from_dir` | method | none yet | later phase |
-| `MarkovLangDetector.score` | method | none yet | later phase |
-| `MarkovLangDetector.detect` | method | none yet | later phase |
-| `MarkovLangDetector.is_contact` | method | none yet | later phase |
-| `get_detector` | function | none yet | later phase |
+| `LANGS` | constant | `tugaphone::langdetect::langs()` | phase 3 |
+| `DEFAULT_MARGIN` | constant | `tugaphone::langdetect::DEFAULT_MARGIN` | phase 3 |
+| `PORTUGUESE_KEEP` | constant | `tugaphone::langdetect::portuguese_keep()` | phase 3 |
+| `fold_diacritics` | function | `tugaphone::langdetect::fold_diacritics` | phase 3 |
+| `is_keep_word` | function | `tugaphone::langdetect::is_keep_word` | phase 3 |
+| `MarkovLangDetector` | class | `tugaphone::langdetect::MarkovLangDetector` | phase 3 |
+| `MarkovLangDetector.from_dir` | method | `tugaphone::langdetect::MarkovLangDetector::from_dir` | phase 3 |
+| `MarkovLangDetector.score` | method | `tugaphone::langdetect::MarkovLangDetector::score` | phase 3 |
+| `MarkovLangDetector.detect` | method | `tugaphone::langdetect::MarkovLangDetector::detect` | phase 3 |
+| `MarkovLangDetector.is_contact` | method | `tugaphone::langdetect::MarkovLangDetector::is_contact` | phase 3 |
+| `get_detector` | function | `tugaphone::langdetect::get_detector` | phase 3 |
 <!-- /inventory:langdetect -->
 
 ### tugaphone.accent
@@ -429,33 +473,33 @@ The status "phase 1" means that the name is ported and in the goldens. The statu
 <!-- inventory:accent -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
-| `RespellRule` | class | none yet | later phase |
-| `RespellRule.name` | attribute | none yet | later phase |
-| `RespellRule.pattern` | attribute | none yet | later phase |
-| `RespellRule.replacement` | attribute | none yet | later phase |
-| `RespellRule.note` | attribute | none yet | later phase |
-| `RespellRule.matches` | method | none yet | later phase |
-| `DEFAULT_RESPELL_RULES` | constant | none yet | later phase |
-| `respell_word` | function | none yet | later phase |
-| `respell` | function | none yet | later phase |
-| `Transform` | class | none yet | later phase |
-| `Transform.kind` | attribute | none yet | later phase |
-| `Transform.pattern` | attribute | none yet | later phase |
-| `Transform.replacement` | attribute | none yet | later phase |
-| `Transform.stage` | attribute | none yet | later phase |
-| `Transform.ignore_case` | attribute | none yet | later phase |
-| `Transform.apply` | method | none yet | later phase |
-| `Transform.to_dict` | method | none yet | later phase |
-| `Transform.from_dict` | method | none yet | later phase |
-| `AccentOverlay` | class | none yet | later phase |
-| `AccentOverlay.name` | attribute | none yet | later phase |
-| `AccentOverlay.transforms` | attribute | none yet | later phase |
-| `AccentOverlay.apply` | method | none yet | later phase |
-| `AccentOverlay.to_dict` | method | none yet | later phase |
-| `AccentOverlay.from_dict` | method | none yet | later phase |
-| `AccentOverlay.to_json` | method | none yet | later phase |
-| `AccentOverlay.from_json` | method | none yet | later phase |
-| `force_accent` | function | none yet | later phase |
+| `RespellRule` | class | `tugaphone::accent::RespellRule` | phase 3 |
+| `RespellRule.name` | attribute | `tugaphone::accent::RespellRule::name()` | phase 3 |
+| `RespellRule.pattern` | attribute | `tugaphone::accent::RespellRule::pattern()` | phase 3 |
+| `RespellRule.replacement` | attribute | `tugaphone::accent::RespellRule::replacement()` | phase 3 |
+| `RespellRule.note` | attribute | `tugaphone::accent::RespellRule::note()` | phase 3 |
+| `RespellRule.matches` | method | `tugaphone::accent::RespellRule::matches` | phase 3 |
+| `DEFAULT_RESPELL_RULES` | constant | `tugaphone::accent::default_respell_rules()` | phase 3 |
+| `respell_word` | function | `tugaphone::accent::respell_word` | phase 3 |
+| `respell` | function | `tugaphone::accent::respell` | phase 3 |
+| `Transform` | class | `tugaphone::accent::Transform` | phase 3 |
+| `Transform.kind` | attribute | `tugaphone::accent::Transform::kind` | phase 3 |
+| `Transform.pattern` | attribute | `tugaphone::accent::Transform::pattern` | phase 3 |
+| `Transform.replacement` | attribute | `tugaphone::accent::Transform::replacement` | phase 3 |
+| `Transform.stage` | attribute | `tugaphone::accent::Transform::stage` | phase 3 |
+| `Transform.ignore_case` | attribute | `tugaphone::accent::Transform::ignore_case` | phase 3 |
+| `Transform.apply` | method | `tugaphone::accent::Transform::apply` | phase 3 |
+| `Transform.to_dict` | method | `tugaphone::accent::Transform::to_dict_json` | phase 3 |
+| `Transform.from_dict` | method | `tugaphone::accent::Transform::from_dict_json` | phase 3 |
+| `AccentOverlay` | class | `tugaphone::accent::AccentOverlay` | phase 3 |
+| `AccentOverlay.name` | attribute | `tugaphone::accent::AccentOverlay::name` | phase 3 |
+| `AccentOverlay.transforms` | attribute | `tugaphone::accent::AccentOverlay::transforms` | phase 3 |
+| `AccentOverlay.apply` | method | `tugaphone::accent::AccentOverlay::apply` | phase 3 |
+| `AccentOverlay.to_dict` | method | `tugaphone::accent::AccentOverlay::to_dict_json` | phase 3 |
+| `AccentOverlay.from_dict` | method | `tugaphone::accent::AccentOverlay::from_dict_json` | phase 3 |
+| `AccentOverlay.to_json` | method | `tugaphone::accent::AccentOverlay::to_json` | phase 3 |
+| `AccentOverlay.from_json` | method | `tugaphone::accent::AccentOverlay::from_json` | phase 3 |
+| `force_accent` | function | `tugaphone::accent::force_accent` | phase 3 |
 <!-- /inventory:accent -->
 
 ### tugaphone.plugin

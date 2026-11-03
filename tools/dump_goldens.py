@@ -23,6 +23,10 @@ MODULES = [
     "dialects",
     "text_normalization",
     "number_utils",
+    "markov",
+    "langdetect",
+    "codeswitch",
+    "accent",
 ]
 
 

@@ -2,7 +2,7 @@
 
 A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package, byte for byte. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
 
-These modules are ported: the dialect registry, the dialect inventories, the text normalization rules and the number reader. The phonemizer itself is not ported yet.
+These modules are ported: the dialect registry, the dialect inventories, the text normalization rules, the number reader, the language detector, the code-switching rules and accent forcing. The phonemizer itself is not ported yet. Until it is, the respelling functions of accent forcing need a phonemizer as an argument.
 
 ```cpp
 #include <tugaphone/number_utils.hpp>
@@ -18,7 +18,7 @@ tugaphone::number_utils::normalize_numbers("Comprei 2 casas.");
 
 ## Dependencies
 
-The library uses four other ports, which are git submodules under `third_party/`: silabificador.cpp, tugalex.cpp, bifonia.cpp and orthography2ipa.cpp. Clone with `--recursive`, or run `git submodule update --init` after the clone. orthography2ipa.cpp needs the Boost headers and ICU. The tests need zlib.
+The library uses four other ports, which are git submodules under `third_party/`: silabificador.cpp, tugalex.cpp, bifonia.cpp and orthography2ipa.cpp. Clone with `--recursive`, or run `git submodule update --init` after the clone. orthography2ipa.cpp needs the Boost headers and ICU. The library needs zlib to read the language models.
 
 To use installed copies of the four ports, set `-DTUGAPHONE_USE_SYSTEM_DEPS=ON`. CMake then finds them with `find_package`.
 
