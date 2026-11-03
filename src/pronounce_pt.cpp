@@ -96,17 +96,17 @@ const std::map<int, std::string> kHundreds = {
     {100, "cem"},          {200, "duzentos"},   {300, "trezentos"}, {400, "quatrocentos"}, {500, "quinhentos"},
     {600, "seiscentos"},   {700, "setecentos"}, {800, "oitocentos"}, {900, "novecentos"}};
 const std::vector<std::pair<int, const char*>> kShortScaleStems = {
-    {303, "centili"},      {63, "vigintili"},     {60, "novendecili"}, {57, "octodecili"},
-    {54, "septendecili"},  {51, "sedecili"},      {48, "quindecili"},  {45, "quadriodecili"},
-    {42, "tredecili"},     {39, "dudecili"},      {36, "undecili"},    {33, "decili"},
-    {30, "nonili"},        {27, "octili"},        {24, "septili"},     {21, "sextili"},
-    {18, "quintili"},      {15, "quatrili"},      {12, "trili"},       {9, "bili"}};
+    {303, "centil"},      {63, "vigintil"},     {60, "novendecil"}, {57, "octodecil"},
+    {54, "septendecil"},  {51, "sedecil"},      {48, "quindecil"},  {45, "quadriodecil"},
+    {42, "tredecil"},     {39, "dudecil"},      {36, "undecil"},    {33, "decil"},
+    {30, "nonil"},        {27, "octil"},        {24, "septil"},     {21, "sextil"},
+    {18, "quintil"},      {15, "quatril"},      {12, "tril"},       {9, "bil"}};
 const std::vector<std::pair<int, const char*>> kLongScaleStems = {
-    {600, "centili"},      {120, "vigintili"},    {114, "novendecili"}, {108, "octodecili"},
-    {102, "septendecili"}, {96, "sedecili"},      {90, "quindecili"},  {84, "quadriodecili"},
-    {78, "tredecili"},     {72, "dudecili"},      {66, "undecili"},    {60, "decili"},
-    {54, "nonili"},        {48, "octili"},        {42, "septili"},     {36, "sextili"},
-    {30, "quintili"},      {24, "quatrili"},      {18, "trili"},       {12, "bili"}};
+    {600, "centil"},      {120, "vigintil"},    {114, "novendecil"}, {108, "octodecil"},
+    {102, "septendecil"}, {96, "sedecil"},      {90, "quindecil"},  {84, "quadriodecil"},
+    {78, "tredecil"},     {72, "dudecil"},      {66, "undecil"},    {60, "decil"},
+    {54, "nonil"},        {48, "octil"},        {42, "septil"},     {36, "sextil"},
+    {30, "quintil"},      {24, "quatril"},      {18, "tril"},       {12, "bil"}};
 const std::map<int, std::string> kOrdinalUnits = {{1, "primeiro"}, {2, "segundo"}, {3, "terceiro"},
                                                   {4, "quarto"},   {5, "quinto"},  {6, "sexto"},
                                                   {7, "sétimo"},   {8, "oitavo"},  {9, "nono"}};
@@ -144,7 +144,7 @@ Vocab make_vocab(bool brazilian) {
         v.tens[19] = "dezenove";
     }
     v.hundreds = kHundreds;
-    const char* ending = brazilian ? "hão" : "ão";
+    const char* ending = brazilian ? "hão" : "ião";
     v.short_scale = scale_words(kShortScaleStems, ending);
     v.long_scale = scale_words(kLongScaleStems, ending);
     v.ordinal_units = kOrdinalUnits;

@@ -11,7 +11,8 @@
 #define TUGAPHONE_PARITY_MODULES(X) \
     X(registry)                     \
     X(dialects)                     \
-    X(text_normalization)
+    X(text_normalization)           \
+    X(number_utils)
 
 namespace parity {
 #define TUGAPHONE_PARITY_DECLARE(name) std::string record_##name(const json_line::Value& line);
