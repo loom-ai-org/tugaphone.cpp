@@ -89,6 +89,7 @@ add_library(tugaphone
     src/langdetect.cpp
     src/codeswitch.cpp
     src/accent.cpp
+    src/lattice_core.cpp
 )
 add_library(tugaphone::tugaphone ALIAS tugaphone)
 target_include_directories(tugaphone
@@ -137,13 +138,15 @@ if(TUGAPHONE_BUILD_TESTS)
     enable_testing()
     find_package(ZLIB REQUIRED)
 
-    # The library and the tugalex lexicon read their data from the source trees.
+    # The library, the tugalex lexicon and the bifonia homographs read their
+    # data from the source trees.
     if(TUGAPHONE_USE_SYSTEM_DEPS)
         set(_tugaphone_test_env "TUGAPHONE_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/data")
     else()
         set(_tugaphone_test_env
             "TUGAPHONE_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/data"
-            "TUGALEX_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/tugalex.cpp/data")
+            "TUGALEX_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/tugalex.cpp/data"
+            "BIFONIA_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/bifonia.cpp/data")
     endif()
 
     add_executable(tugaphone_parity
@@ -157,6 +160,7 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/langdetect.cpp
         tests/parity/codeswitch.cpp
         tests/parity/accent.cpp
+        tests/parity/lattice_core.cpp
     )
     target_include_directories(tugaphone_parity PRIVATE tests)
     # The phase-internal headers under src/ expose the private functions the goldens call.
@@ -172,6 +176,8 @@ if(TUGAPHONE_BUILD_TESTS)
     add_test(NAME parity_small_stack COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
              --stack-kb 512 accent)
     set_tests_properties(parity_small_stack PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+    # The engine writes the tugalex lexicon TSVs to its cache.
+    set_property(TEST parity parity_small_stack APPEND PROPERTY ENVIRONMENT "TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache")
 
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)

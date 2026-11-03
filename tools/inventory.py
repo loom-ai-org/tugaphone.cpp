@@ -29,7 +29,8 @@ import tugaphone
 PKG = pathlib.Path(tugaphone.__file__).parent
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PORTED = {"registry": "phase 1", "dialects": "phase 1", "text_normalization": "phase 1", "number_utils": "phase 1",
-          "version": "phase 1", "langdetect": "phase 3", "codeswitch": "phase 3", "accent": "phase 3"}
+          "version": "phase 1", "langdetect": "phase 3", "codeswitch": "phase 3", "accent": "phase 3",
+          "lattice_core": "phase 2"}
 # Python names whose C++ form is not <namespace>::<name>.
 CPP_NAMES = {
     ("dialects", "LEXICON"): "tugaphone::dialects::LEXICON()",

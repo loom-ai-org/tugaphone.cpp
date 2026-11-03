@@ -98,9 +98,42 @@ The eight default respelling rules are written as code, not as regular expressio
 
 The matcher keeps its continuations, backtrack points and group mark changes on heap stacks. Its C++ stack depth thus grows with the nesting of lookarounds, atomic groups and possessive repeats in the pattern, not with the subject. The goldens hold subjects of 100,000 code points, and ctest runs the accent records on a thread with a 512 KB stack.
 
-`respell_word`, `respell` and `force_accent` take the phonemizer as an argument. The default phonemizer is the lattice phonemizer, `lattice_core.phonemize`, which is not in this phase. Until it is linked, a call without a phonemizer raises NotImplementedError. The goldens use a deterministic stand-in phonemizer, which `tools/goldens/accent.py` and `tests/parity/accent.cpp` both define. The stand-in tests the hill-climb, the case restoration, the word spans and the overlay stages.
+`respell_word`, `respell` and `force_accent` take the phonemizer as an argument. Without one, they use the lattice phonemizer, `lattice_core::phonemize`. The accent goldens use a deterministic stand-in phonemizer, which `tools/goldens/accent.py` and `tests/parity/accent.cpp` both define. The stand-in tests the hill-climb, the case restoration, the word spans and the overlay stages. The lattice-engine goldens call `respell_word` and `force_accent` with the default phonemizer.
 
 The goldens hold the default rule matches over every gold word. They hold the respelling of every gold word for its own lect and for pt-PT-x-porto, and of the mixed sentences, with each dialect in turn. They also hold 240 regular expressions, valid and invalid, over Unicode subjects, with and without IGNORECASE.
+
+## The lattice engine
+
+`tugaphone.lattice_core` is ported in full, in `include/tugaphone/lattice_core.hpp`. The engine of a lect is an `orthography2ipa::G2P` from orthography2ipa.cpp. The C++ G2P has no `normalizer=` argument. Thus `engine()` registers the tugaphone normalizer as a normalize plugin named `tugaphone:<lect>` and names it in the plugin overrides of the engine. The Python G2P runs the normalize plugins of the spec and then the normalizer of the caller. No Portuguese spec declares a normalize plugin, so the order is the same. The normalizer applies `normalize_orthography`, then `normalize_numbers`, then the bifonia homograph marks.
+
+The engine registers the tugalex lexicon of the lect before it builds the G2P. It writes the lexicon TSV to `lexicon_cache_dir()`, with a stamp file that holds the tugalex release. `TUGAPHONE_LEXICON_DIR` sets the directory, and `set_lexicon_cache_dir()` replaces it, as a test replaces the Python module attribute. A contact mode other than "none" splits the text with `codeswitch::split_runs` and transcribes each contact token with `codeswitch::transcribe_contact`. `phonemize_runs()` is the loop that joins the runs. The goldens also call it with a fixed contact transcriber, which `tools/goldens/lattice_core.py` and `tests/parity/lattice_core.cpp` both define.
+
+The goldens of the engine are these:
+
+| Corpus | Records |
+| --- | --- |
+| Each of the 41 lects over the 4,541 unique gold-TSV words | 186,181 |
+| Each gold-TSV row through the lect of its file | 10,093 |
+| The test strings through 7 lects | 10,360 |
+| Mixed-language text, 4 lects, contact modes auto, es, fr and en | 1,152 |
+| `respell_word` and `force_accent` with the default phonemizer | 92 |
+| Lect codes, contact codes and the contact loop with a fixed transcriber | 139 |
+| The normalizer, relayout, the stamp path, the lexicon files and the constants | 5,046 |
+| Unicode probes and a seeded fuzz set | 1,614 |
+
+Some engine records wait on fixes in orthography2ipa.cpp. `tests/parity/expected_divergences.tsv` lists each one with the fix it waits on:
+
+| orthography2ipa.cpp fix | Records |
+| --- | --- |
+| #7, an apostrophe inside an English word | 11 |
+| #8, stress at a hiatus | 4,219 |
+| #9, the `followed_by_3` allophone condition | 5,135 |
+| #12, one primary stress in a hyphenated compound | 6,898 |
+| #15, the stress mark after glide formation | 102 |
+| #18, the unstressed clitics of the regional Brazilian lects | 36 |
+| Two or three of these fixes together | 268 |
+
+With orthography2ipa.cpp PRs #1 and #5 to #18 merged into the submodule, every engine record matches.
 
 ## Python defects kept for parity
 
@@ -121,7 +154,7 @@ The port keeps these defects of the reference release, because it is held at byt
 
 `tools/inventory.py` writes the tables below from the reference package. It lists the public module-level names, the public methods and attributes of each public class, the CLI commands and flags, and the data files. A name that a module imports from another module is listed once, in the module that defines it. For each name in a ported module, the script checks that the C++ name is declared in `include/`.
 
-The status "phase 1" or "phase 3" means that the name is ported and in the goldens. The status "later phase" means that a later phase of the port adds it.
+The status "phase 1", "phase 2" or "phase 3" means that the name is ported and in the goldens. The status "later phase" means that a later phase of the port adds it.
 
 ### tugaphone (package)
 
@@ -290,9 +323,9 @@ The status "phase 1" or "phase 3" means that the name is ported and in the golde
 <!-- inventory:lattice_core -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
-| `engine` | function | none yet | later phase |
-| `phonemize` | function | none yet | later phase |
-| `clear_caches` | function | none yet | later phase |
+| `engine` | function | `tugaphone::lattice_core::engine` | phase 2 |
+| `phonemize` | function | `tugaphone::lattice_core::phonemize` | phase 2 |
+| `clear_caches` | function | `tugaphone::lattice_core::clear_caches` | phase 2 |
 <!-- /inventory:lattice_core -->
 
 ### tugaphone.tokenizer

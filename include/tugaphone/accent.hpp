@@ -20,9 +20,9 @@ namespace tugaphone::accent {
 using Phonemizer = std::function<std::string(const std::string& text, const std::string& lect)>;
 
 // The transcriber that an empty Phonemizer argument stands for. By default it
-// is tugaphone's lattice phonemizer (lattice_core.phonemize); until the engine
-// module is linked it raises NotImplementedError. set_default_phonemizer
-// replaces it, and an empty argument restores the default.
+// is tugaphone's lattice phonemizer, lattice_core::phonemize.
+// set_default_phonemizer replaces it, and an empty argument restores the
+// default.
 void set_default_phonemizer(Phonemizer phonemizer);
 
 // A candidate orthographic edit toward a non-base accent. `pattern` is a
