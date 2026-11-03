@@ -160,10 +160,17 @@ if(TUGAPHONE_BUILD_TESTS)
     target_include_directories(tugaphone_parity PRIVATE tests)
     # The phase-internal headers under src/ expose the private functions the goldens call.
     target_include_directories(tugaphone_parity PRIVATE src)
-    target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB)
+    find_package(Threads REQUIRED)
+    target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB Threads::Threads)
     add_test(NAME parity COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
              --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv)
     set_tests_properties(parity PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+    # The accent records include 100,000 code-point subjects for the regular
+    # expression engine; a 512 KB thread stack shows that it does not recurse
+    # per character.
+    add_test(NAME parity_small_stack COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
+             --stack-kb 512 accent)
+    set_tests_properties(parity_small_stack PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)

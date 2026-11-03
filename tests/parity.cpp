@@ -6,10 +6,12 @@
 // a dependency fix lands. A listed record that mismatches is counted apart;
 // a listed record that matches, or that is not in the goldens, fails the run,
 // so that the list shrinks when the fix lands.
+#include <algorithm>
 #include <exception>
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <pthread.h>
 #include <set>
 #include <string>
 #include <utility>
@@ -35,16 +37,18 @@ Divergences read_divergences(const std::string& path) {
     Divergences out;
     std::string line;
     while (std::getline(in, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty() || line[0] == '#') continue;
         const size_t a = line.find('\t'), b = line.rfind('\t');
-        if (a == std::string::npos || a == b) throw std::runtime_error("malformed divergence line: " + line);
+        if (std::count(line.begin(), line.end(), '\t') != 2)
+            throw std::runtime_error("divergence line does not have three tab-separated fields: " + line);
         out[{line.substr(0, a), line.substr(a + 1, b - a - 1)}] = line.substr(b + 1);
     }
     return out;
 }
 
 Tally run(const std::string& dir, const std::string& module, std::string (*record)(const json_line::Value&),
-          const Divergences& divergences) {
+          const Divergences& divergences, long shown) {
     const std::string path = dir + "/" + module + ".jsonl.gz";
     const auto lines = json_line::read_gz_lines(path);
     Tally t;
@@ -78,7 +82,7 @@ Tally run(const std::string& dir, const std::string& module, std::string (*recor
         }
         if (got == lines[i]) continue;
         ++by_function[v.size() ? v[0].str : "?"];
-        if (++t.mismatches <= 10) {
+        if (++t.mismatches <= shown) {
             std::cerr << "MISMATCH " << module << "\n  python: " << lines[i].substr(0, 3000)
                       << "\n  c++:    " << got.substr(0, 3000) << "\n";
         }
@@ -96,43 +100,116 @@ Tally run(const std::string& dir, const std::string& module, std::string (*recor
     return t;
 }
 
-}  // namespace
+const std::vector<std::string>& module_names() {
+#define TUGAPHONE_PARITY_NAME(name) #name,
+    static const std::vector<std::string> names = {TUGAPHONE_PARITY_MODULES(TUGAPHONE_PARITY_NAME)};
+#undef TUGAPHONE_PARITY_NAME
+    return names;
+}
 
-int main(int argc, char** argv) {
-    std::vector<std::string> args(argv + 1, argv + argc);
+struct Options {
+    std::string dir;
+    std::vector<std::string> modules;  // empty: every module
     Divergences divergences;
-    for (size_t i = 0; i < args.size(); ++i) {
-        if (args[i] == "--divergences" && i + 1 < args.size()) {
-            divergences = read_divergences(args[i + 1]);
-            args.erase(args.begin() + static_cast<std::ptrdiff_t>(i), args.begin() + static_cast<std::ptrdiff_t>(i + 2));
-            break;
-        }
+    long shown = 10;  // mismatches printed per module
+};
+
+int run_all(const Options& opt) {
+    for (const auto& [key, fix] : opt.divergences) {
+        const auto& names = module_names();
+        if (std::find(names.begin(), names.end(), key.first) == names.end())
+            throw std::runtime_error("divergence row names an unknown module \"" + key.first + "\" (" + fix + ")");
     }
-    if (args.empty()) {
-        std::cerr << "usage: tugaphone_parity <goldens dir> [--divergences <file>] [module ...]\n";
-        return 2;
-    }
-    const std::string dir = args[0];
-    Tally total;
     auto selected = [&](const std::string& name) {
-        if (args.size() == 1) return true;
-        for (size_t i = 1; i < args.size(); ++i) {
-            if (name == args[i]) return true;
-        }
-        return false;
+        return opt.modules.empty() || std::find(opt.modules.begin(), opt.modules.end(), name) != opt.modules.end();
     };
-#define TUGAPHONE_PARITY_RUN(name)                                      \
-    if (selected(#name)) {                                              \
-        const Tally t = run(dir, #name, parity::record_##name, divergences); \
-        total.expected += t.expected;                                   \
-        total.checked += t.checked;                                     \
-        total.mismatches += t.mismatches;                               \
-        total.divergences += t.divergences;                             \
-        total.stale += t.stale;                                         \
+    Tally total;
+#define TUGAPHONE_PARITY_RUN(name)                                                  \
+    if (selected(#name)) {                                                          \
+        const Tally t = run(opt.dir, #name, parity::record_##name, opt.divergences, opt.shown); \
+        total.expected += t.expected;                                               \
+        total.checked += t.checked;                                                 \
+        total.mismatches += t.mismatches;                                           \
+        total.divergences += t.divergences;                                         \
+        total.stale += t.stale;                                                     \
     }
     TUGAPHONE_PARITY_MODULES(TUGAPHONE_PARITY_RUN)
 #undef TUGAPHONE_PARITY_RUN
     std::cout << "goldens: " << total.expected << " in, " << total.checked << " checked, " << total.mismatches
               << " mismatches, " << total.divergences << " expected divergences, " << total.stale << " stale entries\n";
     return (total.checked == total.expected && total.mismatches == 0 && total.stale == 0) ? 0 : 1;
+}
+
+int run_guarded(const Options& opt) {
+    try {
+        return run_all(opt);
+    } catch (const std::exception& e) {
+        std::cerr << "tugaphone_parity: " << e.what() << "\n";
+        return 1;
+    }
+}
+
+}  // namespace
+
+// usage: tugaphone_parity <goldens dir> [--divergences <file>] [--stack-kb <n>] [--show <n>] [module ...]
+// --stack-kb runs the records on a thread with that stack size, to show that
+// the matchers do not need a stack that grows with the subject. --show sets
+// how many mismatches each module prints (10 by default).
+int main(int argc, char** argv) {
+    Options opt;
+    size_t stack_kb = 0;
+    std::vector<std::string> rest;
+    try {
+        for (int i = 1; i < argc; ++i) {
+            const std::string a = argv[i];
+            if ((a == "--divergences" || a == "--stack-kb" || a == "--show") && i + 1 < argc) {
+                if (a == "--divergences") opt.divergences = read_divergences(argv[++i]);
+                else if (a == "--stack-kb") stack_kb = std::stoul(argv[++i]);
+                else opt.shown = std::stol(argv[++i]);
+            } else {
+                rest.push_back(a);
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "tugaphone_parity: " << e.what() << "\n";
+        return 1;
+    }
+    if (rest.empty()) {
+        std::cerr << "usage: tugaphone_parity <goldens dir> [--divergences <file>] [--stack-kb <n>] [--show <n>] "
+                     "[module ...]\n";
+        return 2;
+    }
+    opt.dir = rest[0];
+    opt.modules.assign(rest.begin() + 1, rest.end());
+    for (const auto& m : opt.modules) {
+        const auto& names = module_names();
+        if (std::find(names.begin(), names.end(), m) == names.end()) {
+            std::cerr << "tugaphone_parity: unknown module \"" << m << "\"\n";
+            return 2;
+        }
+    }
+    if (stack_kb == 0) return run_guarded(opt);
+    struct Job {
+        const Options* opt;
+        int status;
+    } job{&opt, 1};
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    if (pthread_attr_setstacksize(&attr, stack_kb * 1024) != 0) {
+        std::cerr << "tugaphone_parity: cannot set a stack of " << stack_kb << " KB\n";
+        return 2;
+    }
+    pthread_t thread;
+    auto body = [](void* p) -> void* {
+        auto* j = static_cast<Job*>(p);
+        j->status = run_guarded(*j->opt);
+        return nullptr;
+    };
+    if (pthread_create(&thread, &attr, body, &job) != 0) {
+        std::cerr << "tugaphone_parity: cannot start the thread\n";
+        return 2;
+    }
+    pthread_join(thread, nullptr);
+    pthread_attr_destroy(&attr);
+    return job.status;
 }

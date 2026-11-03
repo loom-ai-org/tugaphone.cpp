@@ -75,6 +75,11 @@ def synthetic():
     out.append(("no-counts", '{"order": 2, "smoothing": 1e-05, "vocab": {"id2tok": ["<UNK>"]}}'))
     out.append(("bad-key", '{"order": 1, "smoothing": 1e-05, "vocab": {"id2tok": ["<UNK>", "a"]}, '
                            '"counts": {"x": [1, 2]}}'))
+    # A -0.0 count and a discount mass that rounds to -0.0 in float32:
+    # np.maximum(-0.0, 0.0) gives +0.0, so the probability is +0.0.
+    out.append(("signed-zero", model(1, small, {"1": [-0.0, 3.0, 1.0, 0.0, -0.0, 2.0, 3.0, 5.0],
+                                                "3": [-0.0, -0.0, 3.0, 3.0, 0.0, 0.0, 0.0, 0.0]},
+                                     kn_d1=-1e-300, kn_d2=-1e-300, kn_d3=-1e-300)))
     return out
 
 

@@ -96,6 +96,10 @@ PATTERNS = [
 REPLS = ["X", "<\\g<0>>", "", "\\n", "\\\\", "\\-", "\\q", "\\0", "\\07", "\\101", "\\400", "é", "$0", "\\é",
          "\\g<", "\\g<>", "\\g<1>", "\\1", "\\g<x>", "\\12", "\\g<-1>", "\\g<a b>", "\\g<٣>"]
 
+LONG = [("a*", "a"), (".*", "x"), ("(a|b)*", "ab"), ("(?:ɐ|a)+", "ɐa"), ("(a|b)*?$", "ab"), ("(?:ab)+", "ab"),
+        ("\\w+", "aé"), ("(?>a|b)*", "ab"), ("(?:a|b)*+", "ab"), ("(?<=a)b", "ab"), ("([^ ]+)", "ʀa"),
+        ("(?:(a)|b)*", "ab"), ("(?=a)a*", "a")]
+
 WORD_PATTERNS = ["binho", "a", "", "o carro", "a.b", "(", "ç", "Ç", "ab c", "-", "lh", "VINHO", "ß", "ſ"]
 
 
@@ -145,6 +149,9 @@ def corpora(repo):
     try:
         consts = [["default_rules", [[r.name, r.pattern, r.replacement, r.note] for r in accent.DEFAULT_RESPELL_RULES]]]
         rules = [["rule_matches", w, rule_matches(w)] for w in common.unique(gold + [w.lower() for w in gold] + words)]
+        # `$` matches before a final newline, so a newline-final word reaches it.
+        endings = [w + "\n" for w in gold[:2000]] + ["mal\n", "sal\n\n", "l\n", "dente\n", "Brasil\n", "al\nl\n"]
+        rules += [["rule_matches", w, rule_matches(w)] for w in common.unique(endings)]
         helpers = []
         rng = random.Random(1717)
         pool = gold[:400] + common.UNICODE_PROBES
@@ -234,7 +241,16 @@ def corpora(repo):
                         overlay=accent.AccentOverlay.from_json(use) if use else None)])
             forced.append(["force_accent", text, "pt-BR", "respell", "pt-BR", None,
                            common.call(accent.force_accent, text, "pt-BR", mode="respell", base_lect="pt-BR")])
+        # Subjects of 100,000 code points: the engine must not need a stack
+        # that grows with the subject.
+        long_subjects = []
+        for pattern, unit in LONG:
+            s = unit * (100000 // len(unit))
+            t = accent.Transform(kind="regex", pattern=pattern, replacement="X")
+            long_subjects.append(["transform", "regex", pattern, "X", True, s, common.call(t.apply, s)])
+            long_subjects.append(["user_rule", pattern, s, common.call(
+                lambda: [list(span) for span in accent.RespellRule("u", pattern, "").matches(s)])])
     finally:
         accent.phonemize = saved
     return [("constants", consts), ("rule_matches", rules), ("helpers", helpers), ("respell", respelled),
-            ("regex", regex), ("overlay", overlay), ("force_accent", forced)]
+            ("regex", regex), ("overlay", overlay), ("force_accent", forced), ("long_subjects", long_subjects)]

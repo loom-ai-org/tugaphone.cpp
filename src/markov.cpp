@@ -250,8 +250,8 @@ double MarkovChain::row_prob(const Row& row, long long next_id) const {
     if (kneser_ney_) {
         const double d = c >= 3 ? kn_d3_ : c == 2 ? kn_d2_ : c == 1 ? kn_d1_ : 0.0;
         const double diff = static_cast<double>(c) - d;
-        // np.maximum propagates NaN.
-        const double kept = std::isnan(diff) ? diff : (diff < 0.0 ? 0.0 : diff);
+        // np.maximum propagates NaN and gives +0.0 for -0.0.
+        const double kept = std::isnan(diff) ? diff : (diff <= 0.0 ? 0.0 : diff);
         return kept / static_cast<double>(row.total) + static_cast<double>(row.kn_term);
     }
     // Laplace: (row + smoothing) / (row.sum() + smoothing * V), all float32.

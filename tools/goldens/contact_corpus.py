@@ -47,6 +47,32 @@ def contact_words():
     return common.unique(words)
 
 
+# Words with an apostrophe: English contractions and possessives, French
+# elisions and Portuguese compounds, with the ASCII and the U+2019 form.
+APOSTROPHE_BASE = [
+    "don't", "it's", "can't", "won't", "isn't", "I'm", "we're", "you'll", "she'd", "they've", "let's", "that's",
+    "what's", "there's", "couldn't", "wouldn't", "shouldn't", "doesn't", "didn't", "haven't", "hasn't", "aren't",
+    "wasn't", "weren't", "he's", "I've", "I'd", "we'll", "they're", "you're", "y'all", "'tis", "o'clock",
+    "rock'n'roll", "McDonald's", "O'Neill", "Levi's", "Macy's", "children's", "people's", "rock'", "'90s", "Shaq'",
+    "ab''cd", "'", "''", "a'b", "rock`n`roll", "l'homme", "aujourd'hui", "c'est", "qu'il", "j'ai", "d'Artagnan",
+    "l'été", "n'est", "s'il", "jusqu'à", "presqu'île", "d'água", "copo-d'água", "gota-d'água", "pau-d'arco",
+    "Sant'Ana",
+]
+
+
+def apostrophe_words():
+    out = []
+    for w in APOSTROPHE_BASE:
+        out += [w, w.replace("'", "\u2019"), w.upper(), w.capitalize()]
+    return common.unique(out)
+
+
+def apostrophe_sentences():
+    return ["I don't know", "o show do McDonald's", "it's rock'n'roll baby", "c'est la vie", "às 5 o'clock",
+            "eles can't stop", "don\u2019t stop", "o copo-d'água e o pau-d'arco", "O'Neill e McDonald's",
+            "we're live no Porto", "the people's choice award", "l'homme qu'il aime"]
+
+
 def keep_variants():
     keep = sorted(langdetect.PORTUGUESE_KEEP)
     out = []

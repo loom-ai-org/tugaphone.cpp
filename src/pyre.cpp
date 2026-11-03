@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <functional>
 #include <limits>
 #include <map>
 #include <optional>
@@ -1084,8 +1083,12 @@ MSeq compile_seq(const Seq& seq, int flags, const State& state) {
 
 // ── Matcher ─────────────────────────────────────────────────────────────────
 
-using Cont = std::function<bool(size_t)>;
-
+// The matcher backtracks on heap stacks, so its C++ stack depth does not
+// grow with the subject: a continuation is a chain of frames in `frames_`, a
+// backtrack point is an entry in `choices_`, and every group mark change is
+// logged in `trail_` so that a backtrack restores the marks. Only lookaround,
+// atomic groups and possessive repeats run a nested match, so the C++ depth
+// grows with the nesting of the pattern alone.
 class Matcher {
 public:
     Matcher(const Program& program, U32View s)
@@ -1095,14 +1098,13 @@ public:
     bool search(size_t from, bool must_advance) {
         for (size_t start = from; start <= s_.size(); ++start) {
             std::fill(marks_.begin(), marks_.end(), -1);
-            const bool require_progress = must_advance && start == from;
+            frames_.clear();
+            choices_.clear();
+            trail_.clear();
+            start_ = start;
+            require_progress_ = must_advance && start == from;
             size_t end = 0;
-            const Cont accept = [&](size_t p) {
-                if (require_progress && p == start) return false;
-                end = p;
-                return true;
-            };
-            if (seq(program_.code, 0, start, accept)) {
+            if (run(program_.code, start, push_frame({Frame::Accept}), end)) {
                 marks_[0] = static_cast<long>(start);
                 marks_[1] = static_cast<long>(end);
                 return true;
@@ -1114,6 +1116,279 @@ public:
     const std::vector<long>& marks() const { return marks_; }
 
 private:
+    enum class Mode { Eval, Return, Fail };
+
+    // What to do with the position a sub-match ends at.
+    struct Frame {
+        enum Kind { Accept, SubEnd, Seq, Close, Rep } kind;
+        const MSeq* q = nullptr;   // Seq: go on with q[i:]
+        size_t i = 0;
+        size_t mark = 0;           // Close: the end mark to set
+        const MNode* n = nullptr;  // Rep: one more iteration of n ended
+        uint64_t count = 0;        // Rep: the iteration count after it
+        long last = -1;            // Rep: where the latest optional iteration began
+        size_t parent = 0;
+    };
+    // A backtrack point.
+    struct Choice {
+        enum Kind { Branch, RepeatSkip, RepeatMore } kind;
+        const MNode* n;
+        size_t alt;    // Branch: the next alternative
+        size_t pos;
+        size_t k;      // the continuation
+        uint64_t count;
+        long last;
+        size_t trail;  // trail_ and frames_ sizes when the point was made
+        size_t frames;
+    };
+
+    size_t push_frame(Frame f) {
+        frames_.push_back(f);
+        return frames_.size() - 1;
+    }
+
+    void push_choice(Choice c) {
+        c.trail = trail_.size();
+        c.frames = frames_.size();
+        choices_.push_back(c);
+    }
+
+    void set_mark(size_t index, long value) {
+        trail_.emplace_back(index, marks_[index]);
+        marks_[index] = value;
+    }
+
+    void undo(size_t height) {
+        while (trail_.size() > height) {
+            marks_[trail_.back().first] = trail_.back().second;
+            trail_.pop_back();
+        }
+    }
+
+    // Match q from pos, then continuation k. On success `end` is where the
+    // Accept or SubEnd frame was reached, the backtrack points made inside
+    // are dropped and the mark changes are kept on the trail. On failure the
+    // marks are as on entry.
+    bool run(const MSeq& root, size_t pos, size_t k, size_t& end) {
+        const size_t choice_base = choices_.size(), trail_base = trail_.size();
+        Mode mode = Mode::Eval;
+        const MSeq* q = &root;
+        size_t i = 0;
+        while (true) {
+            if (mode == Mode::Eval) {
+                mode = eval(q, i, pos, k);
+            } else if (mode == Mode::Return) {
+                const Frame f = frames_[k];
+                switch (f.kind) {
+                    case Frame::Accept:
+                        if (require_progress_ && pos == start_) {
+                            mode = Mode::Fail;
+                            break;
+                        }
+                        [[fallthrough]];
+                    case Frame::SubEnd:
+                        end = pos;
+                        choices_.resize(choice_base);
+                        return true;
+                    case Frame::Seq:
+                        q = f.q;
+                        i = f.i;
+                        k = f.parent;
+                        mode = Mode::Eval;
+                        break;
+                    case Frame::Close:
+                        set_mark(f.mark, static_cast<long>(pos));
+                        k = f.parent;
+                        break;
+                    case Frame::Rep:
+                        mode = repeat(*f.n, f.count, pos, f.last, f.parent, q, i, k);
+                        break;
+                }
+            } else {
+                if (choices_.size() == choice_base) {
+                    undo(trail_base);
+                    return false;
+                }
+                const Choice c = choices_.back();
+                choices_.pop_back();
+                undo(c.trail);
+                frames_.resize(c.frames);
+                pos = c.pos;
+                k = c.k;
+                switch (c.kind) {
+                    case Choice::Branch:
+                        if (c.alt + 1 < c.n->kids.size()) {
+                            Choice next = c;
+                            ++next.alt;
+                            push_choice(next);
+                        }
+                        q = &c.n->kids[c.alt];
+                        i = 0;
+                        mode = Mode::Eval;
+                        break;
+                    case Choice::RepeatSkip:
+                        mode = Mode::Return;
+                        break;
+                    case Choice::RepeatMore: {
+                        const bool more = c.count < c.n->max || c.n->max == kMaxRepeat;
+                        if (!more || (c.last >= 0 && pos == static_cast<size_t>(c.last))) {
+                            mode = Mode::Fail;
+                            break;
+                        }
+                        k = push_frame({Frame::Rep, nullptr, 0, 0, c.n, c.count + 1, static_cast<long>(pos), c.k});
+                        q = &c.n->kids[0];
+                        i = 0;
+                        mode = Mode::Eval;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Run q[i:] from pos with continuation k up to its first node that is not
+    // a single character or an anchor, and start that node.
+    Mode eval(const MSeq*& q, size_t& i, size_t& pos, size_t& k) {
+        while (i < q->size()) {
+            const MNode& n = (*q)[i];
+            if (n.kind == MNode::Lit || n.kind == MNode::NotLit || n.kind == MNode::Any || n.kind == MNode::In) {
+                if (!char_at(n, pos)) return Mode::Fail;
+                ++pos;
+                ++i;
+            } else if (n.kind == MNode::At) {
+                if (!at(n, pos)) return Mode::Fail;
+                ++i;
+            } else {
+                break;
+            }
+        }
+        if (i == q->size()) return Mode::Return;
+        const MNode& n = (*q)[i];
+        const size_t next = push_frame({Frame::Seq, q, i + 1, 0, nullptr, 0, -1, k});
+        k = next;
+        switch (n.kind) {
+            case MNode::Branch:
+                if (n.kids.empty()) return Mode::Fail;
+                if (n.kids.size() > 1) push_choice({Choice::Branch, &n, 1, pos, next, 0, -1, 0, 0});
+                q = &n.kids[0];
+                i = 0;
+                return Mode::Eval;
+            case MNode::Mark: {
+                const size_t b = static_cast<size_t>(n.group) * 2;
+                set_mark(b, static_cast<long>(pos));
+                k = push_frame({Frame::Close, nullptr, 0, b + 1, nullptr, 0, -1, next});
+                q = &n.kids[0];
+                i = 0;
+                return Mode::Eval;
+            }
+            case MNode::Repeat:
+                if (n.rep == RepKind::Possessive) return possessive(n, pos) ? Mode::Return : Mode::Fail;
+                return repeat(n, 0, pos, -1, next, q, i, k);
+            case MNode::Ref: {
+                if (!group_set(n.group)) return Mode::Fail;
+                const size_t b = static_cast<size_t>(marks_[static_cast<size_t>(n.group) * 2]);
+                const size_t e = static_cast<size_t>(marks_[static_cast<size_t>(n.group) * 2 + 1]);
+                if (pos + (e - b) > s_.size()) return Mode::Fail;
+                for (size_t j = 0; j < e - b; ++j) {
+                    char32_t x = s_[b + j], y = s_[pos + j];
+                    if (n.refmode == 1) {
+                        x = detail::sre_lower(x);
+                        y = detail::sre_lower(y);
+                    } else if (n.refmode == 2) {
+                        x = ascii_lower(x);
+                        y = ascii_lower(y);
+                    }
+                    if (x != y) return Mode::Fail;
+                }
+                pos += e - b;
+                return Mode::Return;
+            }
+            case MNode::RefExists:
+                if (group_set(n.group) || n.has_no) {
+                    q = &n.kids[group_set(n.group) ? 0 : 1];
+                    i = 0;
+                    return Mode::Eval;
+                }
+                return Mode::Return;
+            case MNode::Look: {
+                const size_t trail = trail_.size();
+                bool matched = false;
+                if (!n.behind || pos >= n.width) {
+                    const size_t from = n.behind ? pos - static_cast<size_t>(n.width) : pos;
+                    size_t ignored = 0;
+                    matched = run(n.kids[0], from, push_frame({Frame::SubEnd}), ignored);
+                }
+                if (n.negative) {
+                    undo(trail);
+                    return matched ? Mode::Fail : Mode::Return;
+                }
+                return matched ? Mode::Return : Mode::Fail;
+            }
+            case MNode::Atomic: {
+                size_t end = 0;
+                if (!run(n.kids[0], pos, push_frame({Frame::SubEnd}), end)) return Mode::Fail;
+                pos = end;
+                return Mode::Return;
+            }
+            default:
+                return Mode::Fail;
+        }
+    }
+
+    // sre's REPEAT with MAX_UNTIL or MIN_UNTIL, after `count` iterations that
+    // ended at `pos`; `last` is where the latest optional iteration began.
+    Mode repeat(const MNode& n, uint64_t count, size_t pos, long last, size_t next, const MSeq*& q, size_t& i,
+                size_t& k) {
+        if (count < n.min) {
+            k = push_frame({Frame::Rep, nullptr, 0, 0, &n, count + 1, last, next});
+            q = &n.kids[0];
+            i = 0;
+            return Mode::Eval;
+        }
+        const bool more = count < n.max || n.max == kMaxRepeat;
+        if (n.rep == RepKind::Max) {
+            if (more && (last < 0 || pos != static_cast<size_t>(last))) {
+                push_choice({Choice::RepeatSkip, &n, 0, pos, next, 0, -1, 0, 0});
+                k = push_frame({Frame::Rep, nullptr, 0, 0, &n, count + 1, static_cast<long>(pos), next});
+                q = &n.kids[0];
+                i = 0;
+                return Mode::Eval;
+            }
+            k = next;
+            return Mode::Return;
+        }
+        push_choice({Choice::RepeatMore, &n, 0, pos, next, count, last, 0, 0});
+        k = next;
+        return Mode::Return;
+    }
+
+    // A possessive repeat: as many iterations as match, without backtracking
+    // into them. Leaves pos after the last iteration.
+    bool possessive(const MNode& n, size_t& pos) {
+        const size_t before = trail_.size();
+        const MSeq& body = n.kids[0];
+        uint64_t count = 0;
+        auto once = [&](size_t from, size_t& to) { return run(body, from, push_frame({Frame::SubEnd}), to); };
+        while (count < n.min) {
+            size_t to = 0;
+            if (!once(pos, to)) {
+                undo(before);
+                return false;
+            }
+            pos = to;
+            ++count;
+        }
+        long prev = -1;
+        while ((count < n.max || n.max == kMaxRepeat) && (prev < 0 || pos != static_cast<size_t>(prev))) {
+            prev = static_cast<long>(pos);
+            size_t to = 0;
+            if (!once(pos, to)) break;
+            pos = to;
+            ++count;
+        }
+        return true;
+    }
+
     bool char_at(const MNode& n, size_t pos) const {
         if (pos >= s_.size()) return false;
         const char32_t ch = s_[pos];
@@ -1168,181 +1443,14 @@ private:
         return b >= 0 && e >= 0 && e >= b;
     }
 
-    bool seq(const MSeq& q, size_t i, size_t pos, const Cont& k) {
-        while (i < q.size()) {
-            const MNode& n = q[i];
-            if (n.kind == MNode::Lit || n.kind == MNode::NotLit || n.kind == MNode::Any || n.kind == MNode::In) {
-                if (!char_at(n, pos)) return false;
-                ++pos;
-                ++i;
-                continue;
-            }
-            if (n.kind == MNode::At) {
-                if (!at(n, pos)) return false;
-                ++i;
-                continue;
-            }
-            const Cont next = [&, i](size_t p) { return seq(q, i + 1, p, k); };
-            return node(n, pos, next);
-        }
-        return k(pos);
-    }
-
-    bool node(const MNode& n, size_t pos, const Cont& next) {
-        switch (n.kind) {
-            case MNode::Branch: {
-                for (const MSeq& alt : n.kids) {
-                    const std::vector<long> saved = marks_;
-                    if (seq(alt, 0, pos, next)) return true;
-                    marks_ = saved;
-                }
-                return false;
-            }
-            case MNode::Mark: {
-                const size_t b = static_cast<size_t>(n.group) * 2;
-                const long old_start = marks_[b];
-                marks_[b] = static_cast<long>(pos);
-                const Cont close = [&](size_t p) {
-                    const long old_end = marks_[b + 1];
-                    marks_[b + 1] = static_cast<long>(p);
-                    if (next(p)) return true;
-                    marks_[b + 1] = old_end;
-                    return false;
-                };
-                if (seq(n.kids[0], 0, pos, close)) return true;
-                marks_[b] = old_start;
-                return false;
-            }
-            case MNode::Repeat:
-                if (n.rep == RepKind::Possessive) return possessive(n, pos, next);
-                return repeat(n, 0, pos, std::nullopt, next);
-            case MNode::Ref: {
-                if (!group_set(n.group)) return false;
-                const size_t b = static_cast<size_t>(marks_[static_cast<size_t>(n.group) * 2]);
-                const size_t e = static_cast<size_t>(marks_[static_cast<size_t>(n.group) * 2 + 1]);
-                if (pos + (e - b) > s_.size()) return false;
-                for (size_t j = 0; j < e - b; ++j) {
-                    char32_t x = s_[b + j], y = s_[pos + j];
-                    if (n.refmode == 1) {
-                        x = detail::sre_lower(x);
-                        y = detail::sre_lower(y);
-                    } else if (n.refmode == 2) {
-                        x = ascii_lower(x);
-                        y = ascii_lower(y);
-                    }
-                    if (x != y) return false;
-                }
-                return next(pos + (e - b));
-            }
-            case MNode::RefExists: {
-                if (group_set(n.group)) return seq(n.kids[0], 0, pos, next);
-                if (n.has_no) return seq(n.kids[1], 0, pos, next);
-                return next(pos);
-            }
-            case MNode::Look: {
-                const std::vector<long> saved = marks_;
-                bool matched;
-                if (n.behind && pos < n.width) {
-                    matched = false;
-                } else {
-                    const size_t from = n.behind ? pos - static_cast<size_t>(n.width) : pos;
-                    matched = seq(n.kids[0], 0, from, [](size_t) { return true; });
-                }
-                if (n.negative) {
-                    marks_ = saved;
-                    return !matched && next(pos);
-                }
-                if (!matched) {
-                    marks_ = saved;
-                    return false;
-                }
-                if (next(pos)) return true;
-                marks_ = saved;
-                return false;
-            }
-            case MNode::Atomic: {
-                const std::vector<long> saved = marks_;
-                size_t end = 0;
-                if (!seq(n.kids[0], 0, pos, [&](size_t p) {
-                        end = p;
-                        return true;
-                    })) {
-                    marks_ = saved;
-                    return false;
-                }
-                if (next(end)) return true;
-                marks_ = saved;
-                return false;
-            }
-            default:
-                return false;
-        }
-    }
-
-    // sre's REPEAT with MAX_UNTIL or MIN_UNTIL, called after `count` iterations
-    // that ended at `pos`; `last` is where the latest optional iteration began.
-    bool repeat(const MNode& n, uint64_t count, size_t pos, std::optional<size_t> last, const Cont& next) {
-        const MSeq& body = n.kids[0];
-        if (count < n.min) {
-            return seq(body, 0, pos, [&](size_t p) { return repeat(n, count + 1, p, last, next); });
-        }
-        const bool more = (count < n.max || n.max == kMaxRepeat);
-        if (n.rep == RepKind::Max) {
-            if (more && (!last || pos != *last)) {
-                const std::vector<long> saved = marks_;
-                if (seq(body, 0, pos, [&](size_t p) { return repeat(n, count + 1, p, pos, next); })) return true;
-                marks_ = saved;
-            }
-            return next(pos);
-        }
-        {
-            const std::vector<long> saved = marks_;
-            if (next(pos)) return true;
-            marks_ = saved;
-        }
-        if (!more || (last && pos == *last)) return false;
-        return seq(body, 0, pos, [&](size_t p) { return repeat(n, count + 1, p, pos, next); });
-    }
-
-    bool possessive(const MNode& n, size_t pos, const Cont& next) {
-        const std::vector<long> before = marks_;
-        const MSeq& body = n.kids[0];
-        uint64_t count = 0;
-        auto once = [&](size_t from, size_t& to) {
-            return seq(body, 0, from, [&](size_t p) {
-                to = p;
-                return true;
-            });
-        };
-        while (count < n.min) {
-            size_t to = 0;
-            if (!once(pos, to)) {
-                marks_ = before;
-                return false;
-            }
-            pos = to;
-            ++count;
-        }
-        std::optional<size_t> prev;
-        while ((count < n.max || n.max == kMaxRepeat) && (!prev || pos != *prev)) {
-            const std::vector<long> saved = marks_;
-            prev = pos;
-            size_t to = 0;
-            if (!once(pos, to)) {
-                marks_ = saved;
-                break;
-            }
-            pos = to;
-            ++count;
-        }
-        if (next(pos)) return true;
-        marks_ = before;
-        return false;
-    }
-
     const Program& program_;
     U32View s_;
     std::vector<long> marks_;
+    std::vector<Frame> frames_;
+    std::vector<Choice> choices_;
+    std::vector<std::pair<size_t, long>> trail_;
+    size_t start_ = 0;
+    bool require_progress_ = false;
 };
 
 // A parsed replacement template: literal pieces and group indexes.

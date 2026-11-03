@@ -76,5 +76,20 @@ def corpora(repo):
         for contact in ("es", "fr", "en"):
             transcribe.append(["transcribe_contact", w, contact, common.call(codeswitch.transcribe_contact, w, contact)])
     transcribe.append(["transcribe_contact", "hello", "xx", common.call(codeswitch.transcribe_contact, "hello", "xx")])
+    apostrophe = []
+    for w in contact_corpus.apostrophe_words():
+        for contact in ("es", "fr", "en"):
+            apostrophe.append(["transcribe_contact", w, contact, common.call(codeswitch.transcribe_contact, w, contact)])
+        for path in ("detector", "fallback"):
+            ctx = Fallback() if path == "fallback" else contextlib.nullcontext()
+            with ctx:
+                apostrophe.append(["classify", w, "en", path, codeswitch._classify(w, "en")])
+    # split_runs as callers reach it: the bundled detector, chosen inside split_runs.
+    public = []
+    for s in contact_corpus.apostrophe_sentences() + sentences[:200]:
+        for contact in CONTACTS:
+            public.append(["split_runs_public", s, contact, "en",
+                           [list(r) for r in codeswitch.split_runs(s, contact, default_side="en")]])
     return [("constants", consts), ("heuristic", heuristic), ("nativize", nativize), ("routing", routing),
-            ("split_runs", runs), ("transcribe_contact", transcribe)]
+            ("split_runs", runs), ("transcribe_contact", transcribe), ("apostrophe", apostrophe),
+            ("split_runs_public", public)]
