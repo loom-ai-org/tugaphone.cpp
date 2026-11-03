@@ -91,6 +91,7 @@ add_library(tugaphone
     src/codeswitch.cpp
     src/accent.cpp
     src/lattice_core.cpp
+    src/tokenizer.cpp
 )
 add_library(tugaphone::tugaphone ALIAS tugaphone)
 target_include_directories(tugaphone
@@ -162,6 +163,7 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/codeswitch.cpp
         tests/parity/accent.cpp
         tests/parity/lattice_core.cpp
+        tests/parity/tokenizer.cpp
     )
     target_include_directories(tugaphone_parity PRIVATE tests)
     # The phase-internal headers under src/ expose the private functions the goldens call.
@@ -202,6 +204,11 @@ if(TUGAPHONE_BUILD_TESTS)
     add_test(NAME threads_lattice_core COMMAND tugaphone_threads_lattice_core)
     set_tests_properties(threads_lattice_core PROPERTIES ENVIRONMENT
         "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-threads")
+
+    add_executable(tugaphone_threads_tokenizer tests/threads_tokenizer.cpp)
+    target_link_libraries(tugaphone_threads_tokenizer PRIVATE tugaphone Threads::Threads)
+    add_test(NAME threads_tokenizer COMMAND tugaphone_threads_tokenizer)
+    set_tests_properties(threads_tokenizer PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)
