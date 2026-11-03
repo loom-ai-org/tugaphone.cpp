@@ -409,9 +409,14 @@ const std::set<std::pair<U32, U32>>& letter_expressions() {
     auto it = cache.find(path);
     if (it != cache.end()) return it->second;
     const json::Value doc = json::loads(detail::read_file(path));
+    // Iterating a dict gives its keys, and iterating a list its items.
+    const json::Value& expressions = doc.at("expressions");
+    std::vector<std::string> phrases;
+    for (const auto& member : expressions.members) phrases.push_back(member.first);
+    for (const auto& item : expressions.items) phrases.push_back(item.text);
     std::set<std::pair<U32, U32>> pairs;
-    for (const auto& phrase : doc.at("expressions").items) {
-        const U32 text = from_utf8(phrase.text);
+    for (const auto& phrase : phrases) {
+        const U32 text = from_utf8(phrase);
         const size_t space = text.rfind(U' ');
         if (space == U32::npos) throw ValueError("not enough values to unpack (expected 2, got 1)");
         pairs.emplace(detail::lower(text.substr(0, space)), text.substr(space + 1));

@@ -1,0 +1,92 @@
+"""Goldens of tugaphone.text_normalization.
+
+Each record runs every public function of the module on one text, each
+function on its own and the full chain, for one language code.
+"""
+import json
+import pathlib
+
+from tugaphone import text_normalization as tn
+from tugaphone.number_utils import NumberParser
+
+from . import common
+
+LANGS = ["pt-PT", "pt-BR", "PT-br", "pt-br-x-rio", "", "en", "pt-AO"]
+
+
+def record(text, lang):
+    return ["text", text, lang, [
+        common.call(tn.split_number_ranges, text),
+        common.call(tn.normalize_number_separators, text),
+        common.call(tn.separate_unit_symbols, text),
+        common.call(tn.expand_clock_times, text),
+        common.call(tn.expand_abbreviations, text),
+        common.call(tn.expand_regnal_numerals, text, lang),
+        common.call(tn.expand_acronyms, text),
+        common.call(tn.expand_letter_digit_codes, text, lang),
+        common.call(tn.normalize_orthography, text, lang),
+    ]]
+
+
+def to_roman(n):
+    out = ""
+    for value, sym in ((1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"), (50, "L"),
+                       (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")):
+        while n >= value:
+            out += sym
+            n -= value
+    return out
+
+
+def rule_texts():
+    out = []
+    numbers = ["7", "0", "1", "1.5", "1,5", "12.345", "1.234,56", "٣", "１２", "7.", "7,", ".7", "x7", "7.7.7"]
+    for unit in NumberParser.UNIT_NAMES:
+        for n in numbers:
+            out += [n + unit, f"{n} {unit}", f"a{n}{unit}", f"{n}{unit}/h", f"{n}{unit}x", f"{n}{unit}²",
+                    f"({n}{unit})", f"{n}{unit}.", f"pesa {n}{unit} hoje"]
+    for n in numbers + ["2,50", "0,50", "0,05", "2,5", "0,00", "1.000,01", "1.0000,5", "2,505"]:
+        out += [f"€{n}", f"€ {n}", f"€{n}x", f"{n} €", f"custa {n} € e", f"a{n} €", f"{n}€"]
+    for a, b in (("15", "8"), ("2,5", "3"), ("1", "2"), ("3", "4,5,6"), ("0", "x1F")):
+        for sep in ("x", "×", " x ", " × ", "x ", " x"):
+            out += [a + sep + b, a + sep + b + sep + "2", f"({a}{sep}{b})", f"a{a}{sep}{b}", f"{a}{sep}{b}a"]
+    for h in list(range(0, 26)) + ["00", "01", "09", "001"]:
+        for m in ("00", "05", "30", "59", "60", "5"):
+            for p in ("", ".", ",", "!", "…", "”", "h"):
+                out.append(f"às {h}:{m}{p}")
+    out += ["1139-1185", "1–2", "1—2", "1−2", "a-1", "1-a", "1-2-3", "chamo-me", "92.073", "10,4", "3.º", "1.2.3"]
+    for abbr in list(tn._UNCONDITIONAL_ABBREVIATIONS) + list(tn._HONORIFIC_ABBREVIATIONS) + list(tn._POSSESSIVES):
+        out += [f"o {abbr} Silva", abbr, f"{abbr},", f"{abbr} Maria", f"{abbr} maria", f"vitamina {abbr} Maria",
+                f"{abbr} Ex.ª", f"{abbr} Ex.as", f"{abbr} Exas.", f"{abbr} Exa.", f"“{abbr}” Isabel", f"{abbr}) x"]
+    for name in ("Maria", "João", "Isabel", "Afonso", "Pio", "Luís", "Ana", "xpto", "“Maria”", "(Maria"):
+        out += [f"D. {name}", f"D. {name} II", f"{name} I", f"{name} IV", f"{name} XIV", f"{name} V."]
+    for n in list(range(1, 60)) + [99, 400, 444, 1000, 1999, 2024, 3888, 3999]:
+        r = to_roman(n)
+        out += [f"século {r}", f"o século {r}", f"O SÉCULO {r}", f"Afonso {r}", f"o {r} Congresso", f"a {r} guerra",
+                f"a {r}", r, f"{r}.", f"eu vi {r}", f"a parte {r}", f"tamanho {r}"]
+    letters = pathlib.Path(tn.__file__).parent / "data" / "letter_expressions.json"
+    for phrase in json.loads(letters.read_text(encoding="utf-8"))["expressions"]:
+        out += [phrase, phrase.upper(), phrase.capitalize(), f"o {phrase} é"]
+    out += ["EU VI O FILME", "ELE IA SAIR", "ELA E EU", "A IA aprende", "IIII", "MMMM", "IIX", "VX", "XM", "ii", "Ii"]
+    for acronym in tn._ACRONYMS:
+        out += [f"A {acronym} aprende", f"ELA E {acronym}", f"{acronym}.", f"({acronym})", acronym.lower()]
+    for code in ("T2", "A3", "RTP2", "mp3", "COVID19", "10 m2", "abc1", "Ab1", "T٣", "t2", "ABCD1", "a12345678901234567890",
+                 "(T2)", "T2.", "x 5 T2", "5 T2", "T0", "T01", "A1B2"):
+        out += [code, f"o {code} na cidade"]
+    return out
+
+
+def corpora(repo):
+    tests = common.unique(common.test_strings(repo))
+    rules = common.unique(rule_texts())
+    probes = common.unique(common.UNICODE_PROBES + [f"7{p}kg {p}12:00 D. {p}Maria {p}XIV" for p in common.UNICODE_PROBES]
+                           + [f"{p}1-2{p}" for p in common.UNICODE_PROBES])
+    alphabet = list("0123456789.,-–:x×€% ºª") + ["kg", "km", "D.", "Sr.", "Maria", "IV", "X", "T", "IA", "EU", " ",
+                                                 "٣", "é", "(", ")", "“", "”"]
+    fuzz = common.unique(common.fuzz_strings(23, 3000, alphabet, 10))
+    out = [("tests", [record(t, LANGS[i % 2]) for i, t in enumerate(tests)]),
+           ("rules", [record(t, "pt-PT") for t in rules]),
+           ("langs", [record(t, lang) for t in rules[::17] for lang in LANGS]),
+           ("unicode", [record(t, "pt-PT") for t in probes]),
+           ("fuzz", [record(t, LANGS[i % len(LANGS)]) for i, t in enumerate(fuzz)])]
+    return out
