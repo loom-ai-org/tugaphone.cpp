@@ -47,7 +47,9 @@ void ensure_lexicon(const std::string& lect);
 // _normalizer(lect)(text): the text the lattice of `lect` reads.
 std::string normalize(std::string_view text, const std::string& lect);
 
-// engine(lect): the cached engine of an orthography2ipa lect code.
+// engine(lect): the cached engine of an orthography2ipa lect code. The
+// normalizer reaches the engine as a plugin override, which transcribe(),
+// features() and sentence_lattice() all apply.
 // orthography2ipa.cpp has no lock of its own: phonemize() holds a lock while
 // it transcribes, but a caller that transcribes with this engine must not do
 // so while another thread calls into tugaphone.

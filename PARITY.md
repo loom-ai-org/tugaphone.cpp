@@ -90,7 +90,7 @@ The goldens hold the score and the detected language of many words. These are th
 
 `tugaphone.codeswitch` is ported in full, in `include/tugaphone/codeswitch.hpp`. `split_runs` uses the Markov detector when the models load, and the letter and stopword heuristics when they do not. The goldens cover both paths: the dumper replaces `langdetect.get_detector` with a function that returns None for the fallback path.
 
-`transcribe_contact` calls orthography2ipa.cpp for the contact lect (es-ES, fr-FR or en-US) and maps the result to Portuguese phones with the same tables. English words with an internal apostrophe, ASCII or U+2019, need the orthography2ipa.cpp fix in loom-ai-org/orthography2ipa.cpp#7. At the pinned submodule, `transcribe_contact("don't", "en")` gives "dan t" where Python gives "dant". This applies to every English contraction and possessive. The goldens hold 216 such records, and `tests/parity/expected_divergences.tsv` lists each one. With #7, all of them match and the list must be empty.
+`transcribe_contact` calls orthography2ipa.cpp for the contact lect (es-ES, fr-FR or en-US) and maps the result to Portuguese phones with the same tables. English words with an internal apostrophe, ASCII or U+2019, stay one word: `transcribe_contact("don't", "en")` gives "dant", as Python does. The goldens hold 216 such records.
 
 ## Accent forcing
 
@@ -108,7 +108,7 @@ The goldens hold the default rule matches over every gold word. They hold the re
 
 `tugaphone.lattice_core` is ported in full, in `include/tugaphone/lattice_core.hpp`. The engine of a lect is an `orthography2ipa::G2P` from orthography2ipa.cpp. The C++ G2P has no `normalizer=` argument. Thus `engine()` registers the tugaphone normalizer as a normalize plugin named `tugaphone:<lect>` and names it in the plugin overrides of the engine. The Python G2P runs the normalize plugins of the spec and then the normalizer of the caller. No Portuguese spec declares a normalize plugin, so the order is the same. The normalizer applies `normalize_orthography`, then `normalize_numbers`, then the bifonia homograph marks.
 
-The engine registers the tugalex lexicon of the lect before it builds the G2P. It writes the lexicon TSV to `lexicon_cache_dir()`, with a stamp file that holds the tugalex release. `TUGAPHONE_LEXICON_DIR` sets the directory, and `set_lexicon_cache_dir()` replaces it, as a test replaces the Python module attribute. A contact mode other than "none" splits the text with `codeswitch::split_runs` and transcribes each contact token with `codeswitch::transcribe_contact`. `phonemize_runs()` is the loop that joins the runs. The goldens also call it with a fixed contact transcriber, which `tools/goldens/lattice_core.py` and `tests/parity/lattice_core.cpp` both define.
+The engine registers the tugalex lexicon of the lect before it builds the G2P. It writes the lexicon TSV to `lexicon_cache_dir()`, with a stamp file that holds the tugalex release, `tugalex::kPythonReference`. `TUGAPHONE_LEXICON_DIR` sets the directory, and `set_lexicon_cache_dir()` replaces it, as a test replaces the Python module attribute. The directory and the stamp path are the strings that `pathlib` gives, and a failure to write the cache raises the `OSError` subclass that Python raises for the same `errno`. A contact mode other than "none" splits the text with `codeswitch::split_runs` and transcribes each contact token with `codeswitch::transcribe_contact`. `phonemize_runs()` is the loop that joins the runs. The goldens also call it with a fixed contact transcriber, which `tools/goldens/lattice_core.py` and `tests/parity/lattice_core.cpp` both define.
 
 The goldens of the engine are these:
 
@@ -120,24 +120,19 @@ The goldens of the engine are these:
 | Mixed-language text, 4 lects, contact modes auto, es, fr and en | 1,152 |
 | `respell_word` and `force_accent` with the default phonemizer | 92 |
 | Lect codes, contact codes and the contact loop with a fixed transcriber | 139 |
-| The normalizer, relayout, the stamp path, the lexicon files and the constants | 5,046 |
+| A numeral next to a homograph, through the 41 lects and contact mode auto | 688 |
+| `engine(lect).sentence_lattice()` and `engine(lect).features()` through 7 lects | 434 |
+| The normalizer, relayout, the stamp path, the lexicon files, the cache directory and the constants | 5,126 |
 | Unicode probes and a seeded fuzz set | 1,614 |
 
-Some engine records wait on fixes in orthography2ipa.cpp. `tests/parity/expected_divergences.tsv` lists each one with the fix it waits on:
+Every engine record matches at the submodule pin, so `tests/parity/expected_divergences.tsv` lists no record. `engine(lect).features()` and `engine(lect).sentence_lattice()` apply the tugaphone normalizer through the plugin override, as `transcribe()` does, and the goldens call both methods with numbers, abbreviations and homographs.
 
-| orthography2ipa.cpp fix | Records |
-| --- | --- |
-| #7, an apostrophe inside an English word | 11 |
-| #8, stress at a hiatus | 4,219 |
-| #9, the `followed_by_3` allophone condition | 5,135 |
-| #12, one primary stress in a hyphenated compound | 6,898 |
-| #15, the stress mark after glide formation | 102 |
-| #18, the unstressed clitics of the regional Brazilian lects | 36 |
-| Two or three of these fixes together | 268 |
+Two cache cases do not match Python:
 
-With orthography2ipa.cpp PRs #1 and #5 to #18 merged into the submodule, every engine record matches.
+- A stamp file that is not UTF-8. Python raises `UnicodeDecodeError` from each `phonemize` call until the file is deleted. The port reads the stamp as stale and writes the cache again. A port of the crash would make a broken cache permanent, and no caller can depend on it.
+- A cache TSV that was not written by the engine, with a current stamp. orthography2ipa.cpp `load_lexicon` folds the case of each key, keeps a trailing carriage return and reads everything after the first tab. Python keeps the key as it is and skips a line that does not have two fields. The engine writes neither case, so only a TSV changed by hand reaches it. The difference is in orthography2ipa.cpp.
 
-orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads, and CI runs it under ThreadSanitizer. The test `threads_package` makes the first calls of ten package entry points in ten threads: the `TugaPhonemizer` methods, the plugin classes and the command line. With the lock made thread-local, ThreadSanitizer reports 35 races in it.
+orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads. The test `threads_tokenizer_codeswitch` builds tokenizer sentences in four threads and makes contact transcriptions in four others. CI runs the `threads_` tests under ThreadSanitizer. The test `threads_package` makes the first calls of ten package entry points in ten threads: the `TugaPhonemizer` methods, the plugin classes and the command line. With the lock made thread-local, ThreadSanitizer reports 35 races in it.
 
 ## The package API, the plugin and the command line
 
@@ -162,20 +157,7 @@ Other records run in the process and compare the line that an uncaught exception
 
 The acceptance sentence is "Tenho 23 anos, Sr. Silva; li o Cap. XII.". The Python command line has no `--contact` flag, so the contact modes of this sentence are in the `phonemize_sentence` records. The command-line records hold the sentence in every lect, and the `--contact` arguments as the error that argparse gives.
 
-Some package and plugin records wait on the same orthography2ipa.cpp fixes as the engine records. Each record was run on orthography2ipa.cpp trees with one or more of these pull requests merged. A record waits on the smallest set of fixes that makes it match. "A or B" means that either fix alone makes it match. The table counts the distinct golden lines:
-
-| orthography2ipa.cpp fix | Lines |
-| --- | --- |
-| #12 | 6,911 |
-| #9 | 5,159 |
-| #8 or #15 | 3,007 |
-| #8 | 1,189 |
-| #15 | 99 |
-| #18 | 36 |
-| #7 or #12 | 18 |
-| Two or three fixes together | 264 |
-
-With orthography2ipa.cpp PRs #1 and #5 to #18 merged into the submodule, every package and plugin record matches.
+Every package and plugin record matches with the orthography2ipa.cpp submodule pin, with no listed divergence.
 
 ## The benchmark
 

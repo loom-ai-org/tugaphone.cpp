@@ -201,7 +201,7 @@ if(TUGAPHONE_BUILD_TESTS)
     # The phase-internal headers under src/ expose the private functions the goldens call.
     target_include_directories(tugaphone_parity PRIVATE src)
     find_package(Threads REQUIRED)
-    target_link_libraries(tugaphone_parity PRIVATE tugaphone tugaphone_benchmark_core ZLIB::ZLIB Threads::Threads)
+    target_link_libraries(tugaphone_parity PRIVATE tugaphone tugaphone_benchmark_core orthography2ipa::orthography2ipa ZLIB::ZLIB Threads::Threads)
     # One parity test per module, so that ctest -j runs the modules in parallel
     # and the timeout applies to each module. The engine writes the tugalex
     # lexicon TSVs to its cache, one cache per test.
@@ -278,6 +278,11 @@ if(TUGAPHONE_BUILD_TESTS)
              ${CMAKE_CURRENT_BINARY_DIR}/cli-process)
     set_tests_properties(cli_process PROPERTIES ENVIRONMENT
         "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-cli-process")
+
+    add_executable(tugaphone_threads_tokenizer_codeswitch tests/threads_tokenizer_codeswitch.cpp)
+    target_link_libraries(tugaphone_threads_tokenizer_codeswitch PRIVATE tugaphone Threads::Threads)
+    add_test(NAME threads_tokenizer_codeswitch COMMAND tugaphone_threads_tokenizer_codeswitch)
+    set_tests_properties(threads_tokenizer_codeswitch PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)

@@ -1,6 +1,7 @@
 #include "tugaphone/lattice_core.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <map>
@@ -13,6 +14,7 @@
 
 #include <bifonia/bifonia.hpp>
 #include <orthography2ipa/orthography2ipa.hpp>
+#include <tugalex/tugalex.hpp>
 
 #include "detail.hpp"
 #include "o2i_registry.hpp"
@@ -32,31 +34,79 @@ using detail::U32;
 
 namespace {
 
-// The tugalex release the C++ lexicon port is held at parity with. The
-// lattice_core goldens record the Python value, and the parity test checks it.
-constexpr const char* kTugalexVersion = "2.2.2a1";
-
-std::string home_dir() {
-    if (const char* home = std::getenv("HOME")) return home;
-    if (const passwd* pw = getpwuid(getuid())) return pw->pw_dir;
-    return "~";
+// os.path.expanduser("~/.cache").
+std::string expand_cache_home() {
+    std::string home;
+    if (const char* env = std::getenv("HOME")) {
+        home = env;
+    } else if (const passwd* pw = getpwuid(getuid())) {
+        home = pw->pw_dir;
+    } else {
+        return "~/.cache";
+    }
+    while (!home.empty() && home.back() == '/') home.pop_back();
+    return home + "/.cache";
 }
 
-// os.path.join(a, b, ...): an empty part adds nothing but its separator.
+// os.path.join(a, b): an empty head adds nothing, not even a separator.
 std::string path_join(const std::string& a, const std::string& b) {
     if (a.empty()) return b;
     return a.back() == '/' ? a + b : a + "/" + b;
 }
 
-std::string default_cache_dir() {
-    if (const char* dir = std::getenv("TUGAPHONE_LEXICON_DIR")) return dir;
+// str(PurePosixPath(path)): empty and "." parts dropped, one or three or more
+// leading slashes made one, exactly two kept, and "" made ".".
+std::string pure_path(std::string_view path) {
+    std::string root;
+    size_t lead = 0;
+    while (lead < path.size() && path[lead] == '/') ++lead;
+    if (lead == 2) {
+        root = "//";
+    } else if (lead > 0) {
+        root = "/";
+    }
+    std::string out = root;
+    size_t start = lead;
+    while (start <= path.size()) {
+        size_t end = path.find('/', start);
+        if (end == std::string_view::npos) end = path.size();
+        const std::string_view part = path.substr(start, end - start);
+        if (!part.empty() && part != ".") {
+            if (out.size() > root.size()) out += '/';
+            out += part;
+        }
+        start = end + 1;
+    }
+    return out.empty() ? "." : out;
+}
+
+// Path(dir) / name for a pure path `dir`.
+std::string path_div(const std::string& dir, const std::string& name) {
+    return dir == "." ? name : path_join(dir, name);
+}
+
+// PurePosixPath.with_suffix(suffix), after pure_path: the suffix of the name
+// starts at its last dot, unless that dot leads the name or ends it.
+std::string with_suffix(std::string_view path, const std::string& suffix) {
+    const std::string p = pure_path(path);
+    const size_t slash = p.rfind('/');
+    const size_t name_start = slash == std::string::npos ? 0 : slash + 1;
+    const std::string name = p.substr(name_start);
+    if (name.empty() || p == ".") throw ValueError(p + " has an empty name");
+    const size_t dot = name.rfind('.');
+    const bool has_suffix = dot != std::string::npos && dot != 0 && dot + 1 != name.size();
+    return p.substr(0, name_start) + (has_suffix ? name.substr(0, dot) : name) + suffix;
+}
+
+std::string default_lexicon_cache_dir() {
+    if (const char* dir = std::getenv("TUGAPHONE_LEXICON_DIR")) return pure_path(dir);
     const char* xdg = std::getenv("XDG_CACHE_HOME");
-    const std::string base = xdg ? std::string(xdg) : path_join(home_dir(), ".cache");
-    return path_join(path_join(base, "tugaphone"), "lexicon");
+    const std::string base = xdg ? std::string(xdg) : expand_cache_home();
+    return pure_path(path_join(path_join(base, "tugaphone"), "lexicon"));
 }
 
 std::string& cache_dir_slot() {
-    static std::string dir = default_cache_dir();
+    static std::string dir = default_lexicon_cache_dir();
     return dir;
 }
 
@@ -110,29 +160,23 @@ std::string relayout(std::string_view ipa) {
     return s8(out);
 }
 
-std::string tugalex_version() { return kTugalexVersion; }
+std::string tugalex_version() { return tugalex::kPythonReference; }
 
 const std::string& lexicon_cache_dir() { return cache_dir_slot(); }
 
-void set_lexicon_cache_dir(std::string path) { cache_dir_slot() = std::move(path); }
+void set_lexicon_cache_dir(std::string path) { cache_dir_slot() = pure_path(path); }
 
-std::string stamp_path(std::string_view path) {
-    // pathlib's with_suffix: the suffix of the last component starts at its
-    // last dot, unless that dot leads the name or ends it.
-    const std::string p(path);
-    const size_t slash = p.rfind('/');
-    const size_t name_start = slash == std::string::npos ? 0 : slash + 1;
-    const std::string name = p.substr(name_start);
-    if (name.empty()) throw ValueError(p + " has an empty name");
-    const size_t dot = name.rfind('.');
-    const bool has_suffix = dot != std::string::npos && dot != 0 && dot + 1 != name.size();
-    return p.substr(0, name_start) + (has_suffix ? name.substr(0, dot) : name) + ".version";
-}
+std::string stamp_path(std::string_view path) { return with_suffix(path, ".version"); }
 
 void write_lexicon(std::string_view region, const std::string& path) {
-    const auto& ipa_map = dialects::LEXICON().get_ipa_map("NOUN", region);
+    const tugalex::OrderedMap<std::string>* ipa_map = nullptr;
+    try {
+        ipa_map = &dialects::LEXICON().get_ipa_map("NOUN", region);
+    } catch (const std::invalid_argument& e) {
+        throw ValueError(e.what());
+    }
     std::vector<const std::pair<std::string, std::string>*> entries;
-    for (const auto& item : ipa_map) entries.push_back(&item);
+    for (const auto& item : *ipa_map) entries.push_back(&item);
     // sorted(ipa_map): UTF-8 byte order is code-point order.
     std::sort(entries.begin(), entries.end(), [](const auto* a, const auto* b) { return a->first < b->first; });
     // pathlib: path.parent.mkdir(parents=True, exist_ok=True), then a
@@ -141,7 +185,7 @@ void write_lexicon(std::string_view region, const std::string& path) {
     const std::string target = detail::pyio::pure_path(path);
     const size_t slash = target.rfind('/');
     detail::pyio::mkdir_parents(slash == std::string::npos ? "." : slash == 0 ? "/" : target.substr(0, slash));
-    const std::string tmp = target + ".tmp";
+    const std::string tmp = with_suffix(target, ".tsv.tmp");
     {
         std::string text;
         for (const auto* e : entries) text += e->first + "\t" + relayout(e->second) + "\n";
@@ -177,8 +221,7 @@ void ensure_lexicon_locked(const std::string& lect) {
         registered().insert(lect);
         return;
     }
-    const std::string dir = lexicon_cache_dir();
-    const std::string path = dir.empty() ? lect + ".tsv" : path_join(dir, lect + ".tsv");
+    const std::string path = path_div(lexicon_cache_dir(), lect + ".tsv");
     if (is_stale(path)) write_lexicon(*region, path);
     o2i::register_lexicon(lect, path);
     registered().insert(lect);
@@ -280,3 +323,7 @@ void clear_caches() {
 }
 
 }  // namespace tugaphone::lattice_core
+
+std::string tugaphone::detail::default_lexicon_cache_dir() {
+    return tugaphone::lattice_core::default_lexicon_cache_dir();
+}

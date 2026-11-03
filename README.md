@@ -1,6 +1,6 @@
 # tugaphone.cpp
 
-A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package 1.4.16a1, byte for byte, except for the records in `tests/parity/expected_divergences.tsv`. These records wait on fixes in orthography2ipa.cpp, and the file names the pull request that each record waits on. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
+A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package 1.4.16a1, byte for byte. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
 
 The whole package is ported: the lattice phonemizer, the tokenizer, the dialect registry and inventories, text normalization, the number reader, the language detector, code-switching, accent forcing, the G2P plugin classes and the command line.
 
@@ -40,7 +40,7 @@ Without `TUGAPHONE_BENCHMARK_ROOT`, the tool uses the working directory as the r
 
 The library uses four other ports, which are git submodules under `third_party/`: silabificador.cpp, tugalex.cpp, bifonia.cpp and orthography2ipa.cpp. Clone with `--recursive`, or run `git submodule update --init` after the clone. orthography2ipa.cpp needs the Boost headers and ICU. The library needs zlib to read the language models.
 
-With Boost 1.86 and later, the pinned orthography2ipa.cpp does not compile: `get_child` with a temporary default tree is a deleted function. orthography2ipa.cpp pull request 1 (https://github.com/loom-ai-org/orthography2ipa.cpp/pull/1) fixes it. Until the submodule pin includes that fix, use Boost 1.85 or earlier, or apply the change of that pull request to `third_party/orthography2ipa.cpp`. A project that uses the installed package must also find Boost, because the installed orthography2ipa configuration calls `find_dependency(Boost)`. If Boost is not in a default location, set `BOOST_ROOT`.
+A project that uses the installed package must also find Boost, because the installed orthography2ipa configuration calls `find_dependency(Boost)`. If Boost is not in a default location, set `BOOST_ROOT`.
 
 To use installed copies of the four ports, set `-DTUGAPHONE_USE_SYSTEM_DEPS=ON`. CMake then finds them with `find_package`.
 
@@ -50,7 +50,13 @@ The library reads its data at run time. `cmake --install` puts the files in `<pr
 
 The engine writes one lexicon file for each lect to a cache directory, as the Python package does. The directory is `TUGAPHONE_LEXICON_DIR` when it is set, else `$XDG_CACHE_HOME/tugaphone/lexicon`, else `~/.cache/tugaphone/lexicon`. If the library cannot make or write this directory, the call fails with the `OSError` that Python raises in the same case, for example `PermissionError`.
 
-The orthography2ipa data has its own variable, `ORTHOGRAPHY2IPA_DATA_DIR`, and its own call, `orthography2ipa::set_data_directory()`. The registry gets its list of lects from this data. If the directory is missing, the library does not stop: `list_dialects()` returns an empty list, and each code resolves to the default lect "pt-PT". The Python package does the same when its orthography2ipa data is missing. If `list_dialects()` is empty, check `ORTHOGRAPHY2IPA_DATA_DIR`.
+The bifonia homograph list has its own variable, `BIFONIA_DATA_DIR`. The orthography2ipa data has its own variable, `ORTHOGRAPHY2IPA_DATA_DIR`, and its own call, `orthography2ipa::set_data_directory()`. The registry gets its list of lects from this data. If the directory is missing, the library does not stop: `list_dialects()` returns an empty list, and each code resolves to the default lect "pt-PT". The Python package does the same when its orthography2ipa data is missing. If `list_dialects()` is empty, check `ORTHOGRAPHY2IPA_DATA_DIR`.
+
+The phonemizer writes the tugalex lexicon of each lect to a cache directory on the first call for that lect. The directory is `TUGAPHONE_LEXICON_DIR` if it is set, else `$XDG_CACHE_HOME/tugaphone/lexicon`, else `~/.cache/tugaphone/lexicon`. Each lexicon file has a stamp with the tugalex release, and a file with another stamp is written again.
+
+## Threads
+
+`phonemize()` and the tokenizer can be called from more than one thread. orthography2ipa.cpp has no lock of its own, so the library holds one lock while it transcribes. `lattice_core::engine()` returns an engine that is shared. Do not call its methods while another thread calls into the library.
 
 ## Build
 
