@@ -127,17 +127,19 @@ The goldens of the engine are these:
 
 Some engine records wait on fixes in orthography2ipa.cpp. `tests/parity/expected_divergences.tsv` lists each one with the fix it waits on:
 
-| orthography2ipa.cpp fix | Records |
+| orthography2ipa.cpp fix | Distinct golden lines |
 | --- | --- |
-| #7, an apostrophe inside an English word | 11 |
-| #8, stress at a hiatus | 4,219 |
-| #9, the `followed_by_3` allophone condition | 5,135 |
+| #7 or #12, an apostrophe inside an English word | 11 |
+| #8, stress at a hiatus | 1,259 |
+| #8 or #15, stress at a hiatus or the stress mark after glide formation | 2,960 |
+| #9, the `followed_by_3` allophone condition | 5,136 |
 | #12, one primary stress in a hyphenated compound | 6,898 |
 | #15, the stress mark after glide formation | 102 |
-| #18, the unstressed clitics of the regional Brazilian lects | 36 |
-| Two or three of these fixes together | 268 |
+| #18, the unstressed clitics of the regional Brazilian lects | 41 |
+| #26, the normalizer in `features()` and `sentence_lattice()` | 350 |
+| Two or three of these fixes together, in one or more ways | 268 |
 
-With orthography2ipa.cpp PRs #1 and #5 to #18 merged into the submodule, every engine record matches.
+Each label comes from 72 builds of the submodule: PR 1 and one set of the PRs above merged onto the pin. The label names every smallest set of PRs that makes the record match, so a record that two fixes each repair names both. With orthography2ipa.cpp PRs #1, #5 to #18 and #26 merged into the submodule, every engine record matches.
 
 `engine(lect).features()` and `engine(lect).sentence_lattice()` read the normalizer only with loom-ai-org/orthography2ipa.cpp#26. Before that fix they skip it, so numbers stay digits, abbreviations stay short and homographs get no marks. The goldens call both methods, and the divergence list holds the records that wait on #26.
 
