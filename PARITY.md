@@ -90,7 +90,7 @@ The goldens hold the score and the detected language of many words. These are th
 
 `tugaphone.codeswitch` is ported in full, in `include/tugaphone/codeswitch.hpp`. `split_runs` uses the Markov detector when the models load, and the letter and stopword heuristics when they do not. The goldens cover both paths: the dumper replaces `langdetect.get_detector` with a function that returns None for the fallback path.
 
-`transcribe_contact` calls orthography2ipa.cpp for the contact lect (es-ES, fr-FR or en-US) and maps the result to Portuguese phones with the same tables. English words with an internal apostrophe, ASCII or U+2019, need the orthography2ipa.cpp fix in loom-ai-org/orthography2ipa.cpp#7. At the pinned submodule, `transcribe_contact("don't", "en")` gives "dan t" where Python gives "dant". This applies to every English contraction and possessive. The goldens hold 216 such records, and `tests/parity/expected_divergences.tsv` lists each one. With #7, all of them match and the list must be empty.
+`transcribe_contact` calls orthography2ipa.cpp for the contact lect (es-ES, fr-FR or en-US) and maps the result to Portuguese phones with the same tables. English words with an internal apostrophe, ASCII or U+2019, stay one word: `transcribe_contact("don't", "en")` gives "dant", as Python does. The goldens hold 216 such records.
 
 ## Accent forcing
 
@@ -125,23 +125,7 @@ The goldens of the engine are these:
 | The normalizer, relayout, the stamp path, the lexicon files, the cache directory and the constants | 5,126 |
 | Unicode probes and a seeded fuzz set | 1,614 |
 
-Some engine records wait on fixes in orthography2ipa.cpp. `tests/parity/expected_divergences.tsv` lists each one with the fix it waits on:
-
-| orthography2ipa.cpp fix | Distinct golden lines |
-| --- | --- |
-| #7 or #12, an apostrophe inside an English word | 11 |
-| #8, stress at a hiatus | 1,259 |
-| #8 or #15, stress at a hiatus or the stress mark after glide formation | 2,960 |
-| #9, the `followed_by_3` allophone condition | 5,136 |
-| #12, one primary stress in a hyphenated compound | 6,898 |
-| #15, the stress mark after glide formation | 102 |
-| #18, the unstressed clitics of the regional Brazilian lects | 41 |
-| #26, the normalizer in `features()` and `sentence_lattice()` | 350 |
-| Two or three of these fixes together, in one or more ways | 268 |
-
-Each label comes from 72 builds of the submodule: PR 1 and one set of the PRs above merged onto the pin. The label names every smallest set of PRs that makes the record match, so a record that two fixes each repair names both. With orthography2ipa.cpp PRs #1, #5 to #18 and #26 merged into the submodule, every engine record matches.
-
-`engine(lect).features()` and `engine(lect).sentence_lattice()` read the normalizer only with loom-ai-org/orthography2ipa.cpp#26. Before that fix they skip it, so numbers stay digits, abbreviations stay short and homographs get no marks. The goldens call both methods, and the divergence list holds the records that wait on #26.
+Every engine record matches at the submodule pin, so `tests/parity/expected_divergences.tsv` lists no record. `engine(lect).features()` and `engine(lect).sentence_lattice()` apply the tugaphone normalizer through the plugin override, as `transcribe()` does, and the goldens call both methods with numbers, abbreviations and homographs.
 
 Two cache cases do not match Python:
 
