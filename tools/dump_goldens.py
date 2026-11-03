@@ -33,6 +33,7 @@ MODULES = [
     "package",
     "plugin",
     "cli",
+    "benchmark",
 ]
 
 

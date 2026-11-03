@@ -109,7 +109,7 @@ std::string record_cli(const Value& v) {
     const bool traceback = v[6].boolean;
     std::string err = r.err;
     // A traceback names Python files; the C++ error line must name the same class.
-    if (traceback && r.err.find('\n') == r.err.size() - 1 && exception_class(r.err) == exception_class(v[4].str))
+    if (traceback && r.err.find('\n') == r.err.size() - 1 && exception_class(r.err) == v[4].str)
         err = v[4].str;
     return list({J("cli"), json_line::dump(v[1]), json_line::dump(v[2]), J(r.out), J(err), J(r.status),
                  json_line::dump(v[6])});

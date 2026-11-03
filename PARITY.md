@@ -156,7 +156,7 @@ The port keeps these defects of the reference release, because it is held at byt
 
 `tools/inventory.py` writes the tables below from the reference package. It lists the public module-level names, the public methods and attributes of each public class, the CLI commands and flags, and the data files. A name that a module imports from another module is listed once, in the module that defines it. For each name in a ported module, the script checks that the C++ name is declared in `include/`.
 
-The status "phase 1", "phase 2" or "phase 3" means that the name is ported and in the goldens. The status "later phase" means that a later phase of the port adds it.
+The status names the phase of the port that adds the name. Each name in the tables is ported and in the goldens: 333 of 333 names.
 
 ### tugaphone (package)
 
@@ -568,6 +568,8 @@ The goldens use 13 dialects: the five national classes, the three city classes, 
 
 ### tugaphone.plugin
 
+The OVOS plugin registration is not applicable. A Python package registers a plugin with an entry point, and C++ has no entry points. A C++ program that wants `SilabificadorSyllabifier` as the syllabifier of orthography2ipa.cpp calls `orthography2ipa::register_syllabifier_plugin`. tugaphone 1.4.16a1 itself declares no entry point: the `orthography2ipa.syllabify` group gets its Portuguese syllabifier from orthography2ipa.
+
 <!-- inventory:plugin -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
@@ -584,6 +586,8 @@ The goldens use 13 dialects: the five national classes, the three city classes, 
 <!-- /inventory:plugin -->
 
 ### Command line
+
+The C++ executable `tugaphone` is the console script of the Python package, `python -m tugaphone`. `src/argparse.cpp` ports the parts of Python 3.12 argparse that the script uses: option abbreviations, `--`, the negative-number rule, the choices check, the usage and help layout for each `COLUMNS` width, and the error messages and exit status 2.
 
 <!-- inventory:cli -->
 | Python name | Kind | C++ name | Status |

@@ -1,20 +1,30 @@
 # tugaphone.cpp
 
-A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package, byte for byte, except for the records in `tests/parity/expected_divergences.tsv`. These wait on a fix in a dependency: English words with an apostrophe, such as "don't", transcribe differently until orthography2ipa.cpp includes loom-ai-org/orthography2ipa.cpp#7. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
+A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package 1.4.16a1, byte for byte, except for the records in `tests/parity/expected_divergences.tsv`. These records wait on fixes in orthography2ipa.cpp, and the file names the pull request that each record waits on. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
 
-These modules are ported: the dialect registry, the dialect inventories, the text normalization rules and the number reader. The language detector, the code-switching rules and accent forcing are ported too. The phonemizer itself is not ported yet. Until it is, the respelling functions of accent forcing need a phonemizer as an argument.
+The whole package is ported: the lattice phonemizer, the tokenizer, the dialect registry and inventories, text normalization, the number reader, the language detector, code-switching, accent forcing, the G2P plugin classes and the command line.
 
 ```cpp
-#include <tugaphone/number_utils.hpp>
-#include <tugaphone/registry.hpp>
-#include <tugaphone/text_normalization.hpp>
+#include <tugaphone/tugaphone.hpp>
 
-tugaphone::registry::resolve_lect("pt-pt-x-azores");  // "pt-PT-x-acores"
-tugaphone::text_normalization::normalize_orthography("D. Maria II chegou às 16:00.");
-// "Dona Maria Segunda chegou às 16 horas."
-tugaphone::number_utils::normalize_numbers("Comprei 2 casas.");
-// "Comprei duas casas."
+tugaphone::TugaPhonemizer ph;
+ph.phonemize_sentence("O comboio chegou às 16:30.", "pt-PT");
+ph.phonemize_sentence("Vou ao shopping.", "pt-BR", "en");  // "en" reads English loanwords as English
+tugaphone::force_accent("o vinho verde", "pt-PT-x-porto");
+tugaphone::resolve_lect("pt-pt-x-azores");  // "pt-PT-x-acores"
 ```
+
+## Command line
+
+The executable `tugaphone` takes the same commands, flags and output as `python -m tugaphone`:
+
+```
+tugaphone phonemize "Tenho 23 anos, Sr. Silva; li o Cap. XII." --lect pt-BR
+tugaphone force-accent "o vinho verde" --lect pt-PT-x-porto --mode respell
+tugaphone list
+```
+
+The build also makes `tugaphone_benchmark`, the port of `scripts/benchmark.py`. Run it from the root of this repository. It scores the rules-only transcription against the gold fixtures in `tests/data/gold/` and writes `benchmarks/results.json` and `docs/scoreboard.md`, as the Python script does. The fixtures are samples of the TigreGotico/portuguese-unified-pronunciation-lexicon dataset, under its CC BY-SA 4.0 licence.
 
 ## Dependencies
 

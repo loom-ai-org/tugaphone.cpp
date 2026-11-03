@@ -132,6 +132,18 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(tugaphone_cli PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+# scripts/benchmark.py of the Python repository: a tool of this source tree,
+# not installed.
+add_library(tugaphone_benchmark_core STATIC src/benchmark.cpp)
+target_include_directories(tugaphone_benchmark_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(tugaphone_benchmark_core PUBLIC tugaphone)
+add_executable(tugaphone_benchmark src/benchmark_main.cpp)
+target_link_libraries(tugaphone_benchmark PRIVATE tugaphone_benchmark_core)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(tugaphone_benchmark_core PRIVATE -Wall -Wextra -Wpedantic -ffp-contract=off)
+    target_compile_options(tugaphone_benchmark PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 install(TARGETS tugaphone tugaphone_cli EXPORT tugaphoneTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -182,24 +194,46 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/package.cpp
         tests/parity/plugin.cpp
         tests/parity/cli.cpp
+        tests/parity/benchmark.cpp
         tests/parity/tokenizer.cpp
     )
     target_include_directories(tugaphone_parity PRIVATE tests)
     # The phase-internal headers under src/ expose the private functions the goldens call.
     target_include_directories(tugaphone_parity PRIVATE src)
     find_package(Threads REQUIRED)
-    target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB Threads::Threads)
-    add_test(NAME parity COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
-             --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv)
-    set_tests_properties(parity PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+    target_link_libraries(tugaphone_parity PRIVATE tugaphone tugaphone_benchmark_core ZLIB::ZLIB Threads::Threads)
+    set(_tugaphone_goldens ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
+        --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv)
+    set(_tugaphone_parity_tests parity parity_plugin parity_cli parity_benchmark parity_small_stack)
+    add_test(NAME parity COMMAND tugaphone_parity ${_tugaphone_goldens} registry dialects text_normalization
+             number_utils version markov langdetect codeswitch accent lattice_core tokenizer)
+    # The package records run the whole engine five times each: shards let
+    # ctest -j run them in parallel processes.
+    set(_tugaphone_package_shards 8)
+    math(EXPR _last "${_tugaphone_package_shards} - 1")
+    foreach(k RANGE ${_last})
+        add_test(NAME parity_package_${k} COMMAND tugaphone_parity ${_tugaphone_goldens}
+                 --shard ${k}/${_tugaphone_package_shards} package)
+        list(APPEND _tugaphone_parity_tests parity_package_${k})
+    endforeach()
+    add_test(NAME parity_plugin COMMAND tugaphone_parity ${_tugaphone_goldens} plugin)
+    add_test(NAME parity_cli COMMAND tugaphone_parity ${_tugaphone_goldens} cli)
+    add_test(NAME parity_benchmark COMMAND tugaphone_parity ${_tugaphone_goldens} benchmark)
+    set_property(TEST parity_cli APPEND PROPERTY ENVIRONMENT "TUGAPHONE_CLI=$<TARGET_FILE:tugaphone_cli>"
+                 "TUGAPHONE_CLI_CWD=${CMAKE_CURRENT_SOURCE_DIR}")
+    set_property(TEST parity_benchmark APPEND PROPERTY ENVIRONMENT
+                 "TUGAPHONE_BENCHMARK_ROOT=${CMAKE_CURRENT_SOURCE_DIR}")
     # The accent records include 100,000 code-point subjects for the regular
     # expression engine; a 512 KB thread stack shows that it does not recurse
     # per character.
     add_test(NAME parity_small_stack COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
              --stack-kb 512 accent)
-    set_tests_properties(parity_small_stack PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
-    # The engine writes the tugalex lexicon TSVs to its cache.
-    set_property(TEST parity parity_small_stack APPEND PROPERTY ENVIRONMENT "TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache")
+    # The engine writes the tugalex lexicon TSVs to its cache. Each test has a
+    # cache of its own, because ctest -j runs them at the same time.
+    foreach(t ${_tugaphone_parity_tests})
+        set_property(TEST ${t} APPEND PROPERTY ENVIRONMENT ${_tugaphone_test_env}
+                     "TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache/${t}")
+    endforeach()
 
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)

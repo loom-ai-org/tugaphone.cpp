@@ -6,7 +6,8 @@ or unset, and holds standard output, standard error and the exit status.
 tests/parity/cli.cpp runs the C++ executable on the same arguments and
 compares the bytes. When Python ends with a traceback, the record says so: the
 frames name Python source files, so the C++ side must give the same output,
-the same status and an error line with the same exception class.
+the same status and an error line with the same exception class. Such a record
+holds only the class, because the frames and the message name local paths.
 """
 import os
 import pathlib
@@ -67,6 +68,8 @@ def run(args, columns):
     p = subprocess.run([sys.executable, "-I", "-m", "tugaphone", *args], capture_output=True, cwd=ROOT, env=env)
     out, err = p.stdout.decode("utf-8"), p.stderr.decode("utf-8")
     traceback = err.startswith("Traceback (most recent call last):\n")
+    if traceback:  # the frames and the message name local paths: keep the exception class only
+        err = err.rstrip("\n").splitlines()[-1].split(":")[0]
     if p.returncode == 0 and err:
         raise SystemExit(f"python wrote to stderr on success, a warning that names a path: {args} {err!r}")
     return ["cli", args, columns, out, err, p.returncode, traceback]
