@@ -24,6 +24,10 @@ MODULES = [
     "text_normalization",
     "number_utils",
     "version",
+    "markov",
+    "langdetect",
+    "codeswitch",
+    "accent",
     "tokenizer",
 ]
 

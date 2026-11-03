@@ -29,12 +29,24 @@ import tugaphone
 PKG = pathlib.Path(tugaphone.__file__).parent
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PORTED = {"registry": "phase 1", "dialects": "phase 1", "text_normalization": "phase 1", "number_utils": "phase 1",
-          "version": "phase 1", "tokenizer": "phase 2"}
+          "version": "phase 1", "langdetect": "phase 3", "codeswitch": "phase 3", "accent": "phase 3",
+          "tokenizer": "phase 2"}
 # Python names whose C++ form is not <namespace>::<name>.
 CPP_NAMES = {
     ("dialects", "LEXICON"): "tugaphone::dialects::LEXICON()",
     ("dialects", "AO1990"): "tugaphone::dialects::AO1990()",
     ("version", "__version__"): "tugaphone::version::version",
+    ("langdetect", "LANGS"): "tugaphone::langdetect::langs()",
+    ("langdetect", "PORTUGUESE_KEEP"): "tugaphone::langdetect::portuguese_keep()",
+    ("accent", "DEFAULT_RESPELL_RULES"): "tugaphone::accent::default_respell_rules()",
+    ("accent", "RespellRule.name"): "tugaphone::accent::RespellRule::name()",
+    ("accent", "RespellRule.pattern"): "tugaphone::accent::RespellRule::pattern()",
+    ("accent", "RespellRule.replacement"): "tugaphone::accent::RespellRule::replacement()",
+    ("accent", "RespellRule.note"): "tugaphone::accent::RespellRule::note()",
+    ("accent", "Transform.to_dict"): "tugaphone::accent::Transform::to_dict_json",
+    ("accent", "Transform.from_dict"): "tugaphone::accent::Transform::from_dict_json",
+    ("accent", "AccentOverlay.to_dict"): "tugaphone::accent::AccentOverlay::to_dict_json",
+    ("accent", "AccentOverlay.from_dict"): "tugaphone::accent::AccentOverlay::from_dict_json",
     ("tokenizer", "PRONOUNCED_QU_GU_U"): "tugaphone::tokenizer::PRONOUNCED_QU_GU_U()",
 }
 CALLABLE_SETS = {"LABEL_HEADS", "PLURAL_FUNCTION_WORDS", "FEMININE_DETERMINERS", "MASCULINE_DETERMINERS",

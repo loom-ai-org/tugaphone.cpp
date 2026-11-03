@@ -10,7 +10,7 @@
 #include <silabificador/silabificador.hpp>
 
 #include "detail.hpp"
-#include "nfd.hpp"
+#include "unicode_norm.hpp"
 #include "o2i_registry.hpp"
 #include "tugaphone/number_utils.hpp"
 

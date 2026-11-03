@@ -60,6 +60,9 @@ else()
     endif()
 endif()
 
+# The langdetect models are gzip files.
+find_package(ZLIB REQUIRED)
+
 # ── Library ──────────────────────────────────────────────────────────────────
 # The data files are installed here, and the library looks here unless
 # set_data_dir() or TUGAPHONE_DATA_DIR names another directory.
@@ -80,7 +83,12 @@ add_library(tugaphone
     src/text_normalization.cpp
     src/registry.cpp
     src/dialects.cpp
-    src/nfd.cpp
+    src/unicode_norm.cpp
+    src/pyre.cpp
+    src/markov.cpp
+    src/langdetect.cpp
+    src/codeswitch.cpp
+    src/accent.cpp
     src/o2i_registry.cpp
     src/tokenizer.cpp
 )
@@ -94,7 +102,8 @@ target_include_directories(tugaphone
 )
 target_link_libraries(tugaphone
     PUBLIC tugalex::tugalex
-    PRIVATE orthography2ipa::orthography2ipa bifonia::bifonia silabificador::silabificador)
+    PRIVATE orthography2ipa::orthography2ipa bifonia::bifonia silabificador::silabificador
+    PRIVATE ZLIB::ZLIB)
 target_compile_definitions(tugaphone PRIVATE TUGAPHONE_DEFAULT_DATA_DIR="${_tugaphone_default_data}")
 set_target_properties(tugaphone PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -148,12 +157,26 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/text_normalization.cpp
         tests/parity/number_utils.cpp
         tests/parity/version.cpp
+        tests/parity/markov.cpp
+        tests/parity/langdetect.cpp
+        tests/parity/codeswitch.cpp
+        tests/parity/accent.cpp
         tests/parity/tokenizer.cpp
     )
     target_include_directories(tugaphone_parity PRIVATE tests)
-    target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB)
-    add_test(NAME parity COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens)
+    # The phase-internal headers under src/ expose the private functions the goldens call.
+    target_include_directories(tugaphone_parity PRIVATE src)
+    find_package(Threads REQUIRED)
+    target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB Threads::Threads)
+    add_test(NAME parity COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
+             --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv)
     set_tests_properties(parity PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+    # The accent records include 100,000 code-point subjects for the regular
+    # expression engine; a 512 KB thread stack shows that it does not recurse
+    # per character.
+    add_test(NAME parity_small_stack COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
+             --stack-kb 512 accent)
+    set_tests_properties(parity_small_stack PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     find_package(Threads REQUIRED)
     add_executable(tugaphone_threads_tokenizer tests/threads_tokenizer.cpp)

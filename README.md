@@ -1,8 +1,8 @@
 # tugaphone.cpp
 
-A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package, byte for byte. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
+A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package, byte for byte, except for the records in `tests/parity/expected_divergences.tsv`. These wait on a fix in a dependency: English words with an apostrophe, such as "don't", transcribe differently until orthography2ipa.cpp includes loom-ai-org/orthography2ipa.cpp#7. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
 
-These modules are ported: the dialect registry, the dialect inventories, the text normalization rules, the number reader and the tokenizer. The lattice phonemizer is not ported yet.
+These modules are ported: the dialect registry, the dialect inventories, the text normalization rules, the number reader and the tokenizer. The language detector, the code-switching rules and accent forcing are ported too. The lattice phonemizer is not ported yet. Until it is, the respelling functions of accent forcing need a phonemizer as an argument.
 
 ```cpp
 #include <tugaphone/number_utils.hpp>
@@ -18,7 +18,7 @@ tugaphone::number_utils::normalize_numbers("Comprei 2 casas.");
 
 ## Dependencies
 
-The library uses four other ports, which are git submodules under `third_party/`: silabificador.cpp, tugalex.cpp, bifonia.cpp and orthography2ipa.cpp. Clone with `--recursive`, or run `git submodule update --init` after the clone. orthography2ipa.cpp needs the Boost headers and ICU. The tests need zlib.
+The library uses four other ports, which are git submodules under `third_party/`: silabificador.cpp, tugalex.cpp, bifonia.cpp and orthography2ipa.cpp. Clone with `--recursive`, or run `git submodule update --init` after the clone. orthography2ipa.cpp needs the Boost headers and ICU. The library needs zlib to read the language models.
 
 With Boost 1.86 and later, the pinned orthography2ipa.cpp does not compile: `get_child` with a temporary default tree is a deleted function. orthography2ipa.cpp pull request 1 (https://github.com/loom-ai-org/orthography2ipa.cpp/pull/1) fixes it. Until the submodule pin includes that fix, use Boost 1.85 or earlier, or apply the change of that pull request to `third_party/orthography2ipa.cpp`. A project that uses the installed package must also find Boost, because the installed orthography2ipa configuration calls `find_dependency(Boost)`. If Boost is not in a default location, set `BOOST_ROOT`.
 

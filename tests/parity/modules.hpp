@@ -14,6 +14,10 @@
     X(text_normalization)           \
     X(number_utils)                 \
     X(version)                      \
+    X(markov)                       \
+    X(langdetect)                   \
+    X(codeswitch)                   \
+    X(accent)                       \
     X(tokenizer)
 
 namespace parity {
