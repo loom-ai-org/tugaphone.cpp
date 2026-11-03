@@ -37,7 +37,7 @@ The phonemizer writes the tugalex lexicon of each lect to a cache directory on t
 
 ## Threads
 
-`phonemize()` can be called from more than one thread. orthography2ipa.cpp has no lock of its own, so the library holds one lock while it transcribes. `lattice_core::engine()` returns an engine that is shared. Do not call its methods while another thread calls into the library.
+`phonemize()` and the tokenizer can be called from more than one thread. orthography2ipa.cpp has no lock of its own, so the library holds one lock while it transcribes. `lattice_core::engine()` returns an engine that is shared. Do not call its methods while another thread calls into the library.
 
 ## Build
 

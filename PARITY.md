@@ -146,7 +146,7 @@ Two cache cases do not match Python:
 - A stamp file that is not UTF-8. Python raises `UnicodeDecodeError` from each `phonemize` call until the file is deleted. The port reads the stamp as stale and writes the cache again. A port of the crash would make a broken cache permanent, and no caller can depend on it.
 - A cache TSV that was not written by the engine, with a current stamp. orthography2ipa.cpp `load_lexicon` folds the case of each key, keeps a trailing carriage return and reads everything after the first tab. Python keeps the key as it is and skips a line that does not have two fields. The engine writes neither case, so only a TSV changed by hand reaches it. The difference is in orthography2ipa.cpp.
 
-orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads, and CI runs it under ThreadSanitizer.
+orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads. The test `threads_tokenizer_codeswitch` builds tokenizer sentences in four threads and makes contact transcriptions in four others. CI runs the `threads_` tests under ThreadSanitizer.
 
 ## Python defects kept for parity
 

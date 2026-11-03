@@ -210,6 +210,11 @@ if(TUGAPHONE_BUILD_TESTS)
     add_test(NAME threads_tokenizer COMMAND tugaphone_threads_tokenizer)
     set_tests_properties(threads_tokenizer PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
+    add_executable(tugaphone_threads_tokenizer_codeswitch tests/threads_tokenizer_codeswitch.cpp)
+    target_link_libraries(tugaphone_threads_tokenizer_codeswitch PRIVATE tugaphone Threads::Threads)
+    add_test(NAME threads_tokenizer_codeswitch COMMAND tugaphone_threads_tokenizer_codeswitch)
+    set_tests_properties(threads_tokenizer_codeswitch PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)
     add_test(NAME examples COMMAND tugaphone_examples)
