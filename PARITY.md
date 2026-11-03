@@ -116,12 +116,14 @@ The port keeps these defects of the reference release, because it is held at byt
 - `Transform.from_dict` reads `ignore_case` with `bool()`, so the string "false" turns case folding on.
 - A `word` transform puts `\b` on each side of the pattern. A pattern that starts or ends with punctuation thus never matches between spaces.
 - `AccentOverlay.from_dict` writes any name with `str()`: a null name becomes "None".
+- The tokenizer gives a grapheme and a character an `idx_in_sentence` of `-1 + idx_in_word`. The value does not add the offset of the word in the sentence.
+- `is_grapheme_silent` compares the prefix with `"m"` and tests `after[0] in "cç"` for the archaic silent p. A direct call with the prefix `"m"` returns true. `CharToken.is_silent` gives the whole word prefix, so the rule never fires for a character of a word: `assumpção` keeps its p. The `mpt` words never match, because t is not in `"cç"`.
 
 ## API inventory
 
 `tools/inventory.py` writes the tables below from the reference package. It lists the public module-level names, the public methods and attributes of each public class, the CLI commands and flags, and the data files. A name that a module imports from another module is listed once, in the module that defines it. For each name in a ported module, the script checks that the C++ name is declared in `include/`.
 
-The status "phase 1" or "phase 3" means that the name is ported and in the goldens. The status "later phase" means that a later phase of the port adds it.
+The status "phase 1", "phase 2" or "phase 3" means that the name is ported and in the goldens, and names the phase of the port that added it. The status "later phase" means that a later phase of the port adds it.
 
 ### tugaphone (package)
 
@@ -297,157 +299,179 @@ The status "phase 1" or "phase 3" means that the name is ported and in the golde
 
 ### tugaphone.tokenizer
 
+A Sentence owns its WordTokens, a WordToken owns its GraphemeTokens, and a GraphemeToken owns its CharTokens. Each token keeps a pointer to its parent, so a token cannot be copied or moved. A Python `cached_property` is computed on first use and then kept. The dialect of a token is a `std::shared_ptr<const DialectInventory>`, and a null pointer stands for a new `EuropeanPortuguese()`.
+
+The constructors take the Python arguments, except `graphemes=` of WordToken and `characters=` of GraphemeToken. In C++ a parent always builds its children, because each child must point at its parent. `features` returns the dict as an ordered list of key and value pairs, and `features_json()` writes it as `json.dumps` does. `unicodedata.normalize("NFD")` and `unicodedata.combining` come from `src/unicode_norm.hpp`, the tables that the language detector also uses.
+
+The goldens use 13 dialects: the five national classes, the three city classes, the base `DialectInventory`, and four dialect codes given to a national class. Two of the codes are regional, and no class knows the other two. A record holds the IPA and the features of the sentence. In the five national classes it also holds every property of every word, grapheme and character token. A sentence of up to 12 characters has the full text of these properties, and a longer one has a CRC-32 and a length.
+
+| Corpus | Records |
+| --- | --- |
+| Module functions and constants | 1,806 |
+| Test strings, token properties, national classes | 7,400 |
+| Test strings, IPA, the other eight dialects | 11,840 |
+| The 4,541 unique words of the 10,093 gold-TSV rows, IPA, 13 dialects | 59,033 |
+| Every 20th gold-TSV word, token properties, national classes | 1,140 |
+| Unicode probes | 228 |
+| Seeded fuzz | 1,500 |
+| Tokens built directly, parent links, diaeresis vowels and rare graphemes | 308 |
+| Total | 83,255 |
+
+The rare graphemes are the tetragraphs of "Uruguai" and "quais", the triphthong of "saguão", the final o after a silent h in "Soho", and the atonic "pra". Only caller syllables, such as `["assu", "mpção"]`, put an archaic `mpç` or `mpt` grapheme in a word, so the goldens build these words with their syllables.
+
+orthography2ipa.cpp keeps its spec cache in a global map with no lock. The tokenizer holds `detail::o2i_registry_mutex()` while it loads a spec, so threads can build sentences of different dialect codes at the same time. The test `threads_tokenizer` builds eight sentences in eight threads, and CI runs it under ThreadSanitizer.
+
 <!-- inventory:tokenizer -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
-| `detect_stress_position` | function | none yet | later phase |
-| `PRONOUNCED_QU_GU_U` | constant | none yet | later phase |
-| `pronounces_qu_gu_u` | function | none yet | later phase |
-| `is_grapheme_silent` | function | none yet | later phase |
-| `CharToken` | class | none yet | later phase |
-| `CharToken.surface` | attribute | none yet | later phase |
-| `CharToken.char_idx` | attribute | none yet | later phase |
-| `CharToken.parent_grapheme` | attribute | none yet | later phase |
-| `CharToken.dialect` | method | none yet | later phase |
-| `CharToken.normalized` | method | none yet | later phase |
-| `CharToken.idx_in_word` | method | none yet | later phase |
-| `CharToken.idx_in_sentence` | method | none yet | later phase |
-| `CharToken.parent_word` | method | none yet | later phase |
-| `CharToken.parent_sentence` | method | none yet | later phase |
-| `CharToken.prev_char` | method | none yet | later phase |
-| `CharToken.next_char` | method | none yet | later phase |
-| `CharToken.prefix` | method | none yet | later phase |
-| `CharToken.suffix` | method | none yet | later phase |
-| `CharToken.is_punct` | method | none yet | later phase |
-| `CharToken.is_vowel` | method | none yet | later phase |
-| `CharToken.is_semivowel` | method | none yet | later phase |
-| `CharToken.is_consonant` | method | none yet | later phase |
-| `CharToken.is_nasal_vowel` | method | none yet | later phase |
-| `CharToken.is_foreign` | method | none yet | later phase |
-| `CharToken.has_diacritics` | method | none yet | later phase |
-| `CharToken.is_silent` | method | none yet | later phase |
-| `CharToken.is_open_vowel` | method | none yet | later phase |
-| `CharToken.is_closed_vowel` | method | none yet | later phase |
-| `CharToken.vowel_height` | method | none yet | later phase |
-| `CharToken.vowel_backness` | method | none yet | later phase |
-| `CharToken.vowel_roundedness` | method | none yet | later phase |
-| `CharToken.is_front_vowel` | method | none yet | later phase |
-| `CharToken.is_back_vowel` | method | none yet | later phase |
-| `CharToken.is_rounded_vowel` | method | none yet | later phase |
-| `CharToken.manner_of_articulation` | method | none yet | later phase |
-| `CharToken.place_of_articulation` | method | none yet | later phase |
-| `CharToken.voicing` | method | none yet | later phase |
-| `CharToken.is_plosive` | method | none yet | later phase |
-| `CharToken.is_fricative` | method | none yet | later phase |
-| `CharToken.is_nasal_consonant` | method | none yet | later phase |
-| `CharToken.is_liquid` | method | none yet | later phase |
-| `CharToken.is_sibilant` | method | none yet | later phase |
-| `CharToken.is_rhotic` | method | none yet | later phase |
-| `CharToken.is_sonorant` | method | none yet | later phase |
-| `CharToken.is_obstruent` | method | none yet | later phase |
-| `CharToken.parent_syllable` | method | none yet | later phase |
-| `CharToken.idx_in_syllable` | method | none yet | later phase |
-| `CharToken.is_nucleus` | method | none yet | later phase |
-| `CharToken.is_onset` | method | none yet | later phase |
-| `CharToken.is_coda` | method | none yet | later phase |
-| `CharToken.is_first_word_letter` | method | none yet | later phase |
-| `CharToken.is_last_word_letter` | method | none yet | later phase |
-| `CharToken.is_intervocalic` | method | none yet | later phase |
-| `CharToken.is_between_consonant_vowel` | method | none yet | later phase |
-| `CharToken.is_between_vowel_consonant` | method | none yet | later phase |
-| `CharToken.has_primary_stress` | method | none yet | later phase |
-| `CharToken.has_secondary_stress` | method | none yet | later phase |
-| `CharToken.ipa` | method | none yet | later phase |
-| `CharToken.features` | method | none yet | later phase |
-| `GraphemeToken` | class | none yet | later phase |
-| `GraphemeToken.surface` | attribute | none yet | later phase |
-| `GraphemeToken.grapheme_idx` | attribute | none yet | later phase |
-| `GraphemeToken.syllable_idx` | attribute | none yet | later phase |
-| `GraphemeToken.characters` | attribute | none yet | later phase |
-| `GraphemeToken.parent_word` | attribute | none yet | later phase |
-| `GraphemeToken.dialect` | method | none yet | later phase |
-| `GraphemeToken.normalized` | method | none yet | later phase |
-| `GraphemeToken.n_chars` | method | none yet | later phase |
-| `GraphemeToken.first_char` | method | none yet | later phase |
-| `GraphemeToken.last_char` | method | none yet | later phase |
-| `GraphemeToken.idx_in_word` | method | none yet | later phase |
-| `GraphemeToken.idx_in_sentence` | method | none yet | later phase |
-| `GraphemeToken.parent_sentence` | method | none yet | later phase |
-| `GraphemeToken.parent_syllable` | method | none yet | later phase |
-| `GraphemeToken.prefix` | method | none yet | later phase |
-| `GraphemeToken.suffix` | method | none yet | later phase |
-| `GraphemeToken.prev_grapheme` | method | none yet | later phase |
-| `GraphemeToken.next_grapheme` | method | none yet | later phase |
-| `GraphemeToken.prev_syllable` | method | none yet | later phase |
-| `GraphemeToken.next_syllable` | method | none yet | later phase |
-| `GraphemeToken.is_archaism` | method | none yet | later phase |
-| `GraphemeToken.is_nasal` | method | none yet | later phase |
-| `GraphemeToken.is_vocalic_hiatus` | method | none yet | later phase |
-| `GraphemeToken.is_diphthong` | method | none yet | later phase |
-| `GraphemeToken.is_triphthong` | method | none yet | later phase |
-| `GraphemeToken.is_falling_diphthong` | method | none yet | later phase |
-| `GraphemeToken.is_rising_diphthong` | method | none yet | later phase |
-| `GraphemeToken.is_nasal_diphthong` | method | none yet | later phase |
-| `GraphemeToken.is_oral_diphthong` | method | none yet | later phase |
-| `GraphemeToken.is_digraph` | method | none yet | later phase |
-| `GraphemeToken.is_foreign_digraph` | method | none yet | later phase |
-| `GraphemeToken.is_trigraph` | method | none yet | later phase |
-| `GraphemeToken.is_consonant_hiatus` | method | none yet | later phase |
-| `GraphemeToken.is_vowel_grapheme` | method | none yet | later phase |
-| `GraphemeToken.is_consonant_grapheme` | method | none yet | later phase |
-| `GraphemeToken.idx_in_syllable` | method | none yet | later phase |
-| `GraphemeToken.syllable_position` | method | none yet | later phase |
-| `GraphemeToken.phonological_weight` | method | none yet | later phase |
-| `GraphemeToken.has_complex_onset` | method | none yet | later phase |
-| `GraphemeToken.is_onset_cluster` | method | none yet | later phase |
-| `GraphemeToken.is_palatal` | method | none yet | later phase |
-| `GraphemeToken.triggers_palatalization` | method | none yet | later phase |
-| `GraphemeToken.has_primary_stress` | method | none yet | later phase |
-| `GraphemeToken.has_secondary_stress` | method | none yet | later phase |
-| `GraphemeToken.ipa` | method | none yet | later phase |
-| `GraphemeToken.features` | method | none yet | later phase |
-| `WordToken` | class | none yet | later phase |
-| `WordToken.surface` | attribute | none yet | later phase |
-| `WordToken.word_idx` | attribute | none yet | later phase |
-| `WordToken.graphemes` | attribute | none yet | later phase |
-| `WordToken.syllables` | attribute | none yet | later phase |
-| `WordToken.parent_sentence` | attribute | none yet | later phase |
-| `WordToken.dialect` | attribute | none yet | later phase |
-| `WordToken.chunk_idx` | attribute | none yet | later phase |
-| `WordToken.normalized` | method | none yet | later phase |
-| `WordToken.normalized_syllables` | method | none yet | later phase |
-| `WordToken.n_syllables` | method | none yet | later phase |
-| `WordToken.idx_in_sentence` | method | none yet | later phase |
-| `WordToken.is_archaic` | method | none yet | later phase |
-| `WordToken.prev_word` | method | none yet | later phase |
-| `WordToken.next_word` | method | none yet | later phase |
-| `WordToken.stressed_syllable_idx` | method | none yet | later phase |
-| `WordToken.hyphen_group` | method | none yet | later phase |
-| `WordToken.is_function_word` | method | none yet | later phase |
-| `WordToken.is_hyphen_clitic` | method | none yet | later phase |
-| `WordToken.stress_token` | method | none yet | later phase |
-| `WordToken.stress_pattern` | method | none yet | later phase |
-| `WordToken.has_diphthongs` | method | none yet | later phase |
-| `WordToken.has_nasal_sounds` | method | none yet | later phase |
-| `WordToken.has_palatal_sounds` | method | none yet | later phase |
-| `WordToken.has_consonant_clusters` | method | none yet | later phase |
-| `WordToken.syllable_structure_pattern` | method | none yet | later phase |
-| `WordToken.phoneme_count` | method | none yet | later phase |
-| `WordToken.vowel_sequence` | method | none yet | later phase |
-| `WordToken.consonant_sequence` | method | none yet | later phase |
-| `WordToken.is_homograph` | method | none yet | later phase |
-| `WordToken.is_irregular` | method | none yet | later phase |
-| `WordToken.ipa` | method | none yet | later phase |
-| `WordToken.features` | method | none yet | later phase |
-| `Sentence` | class | none yet | later phase |
-| `Sentence.surface` | attribute | none yet | later phase |
-| `Sentence.words` | attribute | none yet | later phase |
-| `Sentence.dialect` | attribute | none yet | later phase |
-| `Sentence.normalized` | method | none yet | later phase |
-| `Sentence.n_words` | method | none yet | later phase |
-| `Sentence.ipa` | method | none yet | later phase |
-| `Sentence.features` | method | none yet | later phase |
-| `demonstrate_transcription` | function | none yet | later phase |
+| `detect_stress_position` | function | `tugaphone::tokenizer::detect_stress_position` | phase 2 |
+| `PRONOUNCED_QU_GU_U` | constant | `tugaphone::tokenizer::PRONOUNCED_QU_GU_U()` | phase 2 |
+| `pronounces_qu_gu_u` | function | `tugaphone::tokenizer::pronounces_qu_gu_u` | phase 2 |
+| `is_grapheme_silent` | function | `tugaphone::tokenizer::is_grapheme_silent` | phase 2 |
+| `CharToken` | class | `tugaphone::tokenizer::CharToken` | phase 2 |
+| `CharToken.surface` | attribute | `tugaphone::tokenizer::CharToken::surface` | phase 2 |
+| `CharToken.char_idx` | attribute | `tugaphone::tokenizer::CharToken::char_idx` | phase 2 |
+| `CharToken.parent_grapheme` | attribute | `tugaphone::tokenizer::CharToken::parent_grapheme` | phase 2 |
+| `CharToken.dialect` | method | `tugaphone::tokenizer::CharToken::dialect` | phase 2 |
+| `CharToken.normalized` | method | `tugaphone::tokenizer::CharToken::normalized` | phase 2 |
+| `CharToken.idx_in_word` | method | `tugaphone::tokenizer::CharToken::idx_in_word` | phase 2 |
+| `CharToken.idx_in_sentence` | method | `tugaphone::tokenizer::CharToken::idx_in_sentence` | phase 2 |
+| `CharToken.parent_word` | method | `tugaphone::tokenizer::CharToken::parent_word` | phase 2 |
+| `CharToken.parent_sentence` | method | `tugaphone::tokenizer::CharToken::parent_sentence` | phase 2 |
+| `CharToken.prev_char` | method | `tugaphone::tokenizer::CharToken::prev_char` | phase 2 |
+| `CharToken.next_char` | method | `tugaphone::tokenizer::CharToken::next_char` | phase 2 |
+| `CharToken.prefix` | method | `tugaphone::tokenizer::CharToken::prefix` | phase 2 |
+| `CharToken.suffix` | method | `tugaphone::tokenizer::CharToken::suffix` | phase 2 |
+| `CharToken.is_punct` | method | `tugaphone::tokenizer::CharToken::is_punct` | phase 2 |
+| `CharToken.is_vowel` | method | `tugaphone::tokenizer::CharToken::is_vowel` | phase 2 |
+| `CharToken.is_semivowel` | method | `tugaphone::tokenizer::CharToken::is_semivowel` | phase 2 |
+| `CharToken.is_consonant` | method | `tugaphone::tokenizer::CharToken::is_consonant` | phase 2 |
+| `CharToken.is_nasal_vowel` | method | `tugaphone::tokenizer::CharToken::is_nasal_vowel` | phase 2 |
+| `CharToken.is_foreign` | method | `tugaphone::tokenizer::CharToken::is_foreign` | phase 2 |
+| `CharToken.has_diacritics` | method | `tugaphone::tokenizer::CharToken::has_diacritics` | phase 2 |
+| `CharToken.is_silent` | method | `tugaphone::tokenizer::CharToken::is_silent` | phase 2 |
+| `CharToken.is_open_vowel` | method | `tugaphone::tokenizer::CharToken::is_open_vowel` | phase 2 |
+| `CharToken.is_closed_vowel` | method | `tugaphone::tokenizer::CharToken::is_closed_vowel` | phase 2 |
+| `CharToken.vowel_height` | method | `tugaphone::tokenizer::CharToken::vowel_height` | phase 2 |
+| `CharToken.vowel_backness` | method | `tugaphone::tokenizer::CharToken::vowel_backness` | phase 2 |
+| `CharToken.vowel_roundedness` | method | `tugaphone::tokenizer::CharToken::vowel_roundedness` | phase 2 |
+| `CharToken.is_front_vowel` | method | `tugaphone::tokenizer::CharToken::is_front_vowel` | phase 2 |
+| `CharToken.is_back_vowel` | method | `tugaphone::tokenizer::CharToken::is_back_vowel` | phase 2 |
+| `CharToken.is_rounded_vowel` | method | `tugaphone::tokenizer::CharToken::is_rounded_vowel` | phase 2 |
+| `CharToken.manner_of_articulation` | method | `tugaphone::tokenizer::CharToken::manner_of_articulation` | phase 2 |
+| `CharToken.place_of_articulation` | method | `tugaphone::tokenizer::CharToken::place_of_articulation` | phase 2 |
+| `CharToken.voicing` | method | `tugaphone::tokenizer::CharToken::voicing` | phase 2 |
+| `CharToken.is_plosive` | method | `tugaphone::tokenizer::CharToken::is_plosive` | phase 2 |
+| `CharToken.is_fricative` | method | `tugaphone::tokenizer::CharToken::is_fricative` | phase 2 |
+| `CharToken.is_nasal_consonant` | method | `tugaphone::tokenizer::CharToken::is_nasal_consonant` | phase 2 |
+| `CharToken.is_liquid` | method | `tugaphone::tokenizer::CharToken::is_liquid` | phase 2 |
+| `CharToken.is_sibilant` | method | `tugaphone::tokenizer::CharToken::is_sibilant` | phase 2 |
+| `CharToken.is_rhotic` | method | `tugaphone::tokenizer::CharToken::is_rhotic` | phase 2 |
+| `CharToken.is_sonorant` | method | `tugaphone::tokenizer::CharToken::is_sonorant` | phase 2 |
+| `CharToken.is_obstruent` | method | `tugaphone::tokenizer::CharToken::is_obstruent` | phase 2 |
+| `CharToken.parent_syllable` | method | `tugaphone::tokenizer::CharToken::parent_syllable` | phase 2 |
+| `CharToken.idx_in_syllable` | method | `tugaphone::tokenizer::CharToken::idx_in_syllable` | phase 2 |
+| `CharToken.is_nucleus` | method | `tugaphone::tokenizer::CharToken::is_nucleus` | phase 2 |
+| `CharToken.is_onset` | method | `tugaphone::tokenizer::CharToken::is_onset` | phase 2 |
+| `CharToken.is_coda` | method | `tugaphone::tokenizer::CharToken::is_coda` | phase 2 |
+| `CharToken.is_first_word_letter` | method | `tugaphone::tokenizer::CharToken::is_first_word_letter` | phase 2 |
+| `CharToken.is_last_word_letter` | method | `tugaphone::tokenizer::CharToken::is_last_word_letter` | phase 2 |
+| `CharToken.is_intervocalic` | method | `tugaphone::tokenizer::CharToken::is_intervocalic` | phase 2 |
+| `CharToken.is_between_consonant_vowel` | method | `tugaphone::tokenizer::CharToken::is_between_consonant_vowel` | phase 2 |
+| `CharToken.is_between_vowel_consonant` | method | `tugaphone::tokenizer::CharToken::is_between_vowel_consonant` | phase 2 |
+| `CharToken.has_primary_stress` | method | `tugaphone::tokenizer::CharToken::has_primary_stress` | phase 2 |
+| `CharToken.has_secondary_stress` | method | `tugaphone::tokenizer::CharToken::has_secondary_stress` | phase 2 |
+| `CharToken.ipa` | method | `tugaphone::tokenizer::CharToken::ipa` | phase 2 |
+| `CharToken.features` | method | `tugaphone::tokenizer::CharToken::features` | phase 2 |
+| `GraphemeToken` | class | `tugaphone::tokenizer::GraphemeToken` | phase 2 |
+| `GraphemeToken.surface` | attribute | `tugaphone::tokenizer::GraphemeToken::surface` | phase 2 |
+| `GraphemeToken.grapheme_idx` | attribute | `tugaphone::tokenizer::GraphemeToken::grapheme_idx` | phase 2 |
+| `GraphemeToken.syllable_idx` | attribute | `tugaphone::tokenizer::GraphemeToken::syllable_idx` | phase 2 |
+| `GraphemeToken.characters` | attribute | `tugaphone::tokenizer::GraphemeToken::characters` | phase 2 |
+| `GraphemeToken.parent_word` | attribute | `tugaphone::tokenizer::GraphemeToken::parent_word` | phase 2 |
+| `GraphemeToken.dialect` | method | `tugaphone::tokenizer::GraphemeToken::dialect` | phase 2 |
+| `GraphemeToken.normalized` | method | `tugaphone::tokenizer::GraphemeToken::normalized` | phase 2 |
+| `GraphemeToken.n_chars` | method | `tugaphone::tokenizer::GraphemeToken::n_chars` | phase 2 |
+| `GraphemeToken.first_char` | method | `tugaphone::tokenizer::GraphemeToken::first_char` | phase 2 |
+| `GraphemeToken.last_char` | method | `tugaphone::tokenizer::GraphemeToken::last_char` | phase 2 |
+| `GraphemeToken.idx_in_word` | method | `tugaphone::tokenizer::GraphemeToken::idx_in_word` | phase 2 |
+| `GraphemeToken.idx_in_sentence` | method | `tugaphone::tokenizer::GraphemeToken::idx_in_sentence` | phase 2 |
+| `GraphemeToken.parent_sentence` | method | `tugaphone::tokenizer::GraphemeToken::parent_sentence` | phase 2 |
+| `GraphemeToken.parent_syllable` | method | `tugaphone::tokenizer::GraphemeToken::parent_syllable` | phase 2 |
+| `GraphemeToken.prefix` | method | `tugaphone::tokenizer::GraphemeToken::prefix` | phase 2 |
+| `GraphemeToken.suffix` | method | `tugaphone::tokenizer::GraphemeToken::suffix` | phase 2 |
+| `GraphemeToken.prev_grapheme` | method | `tugaphone::tokenizer::GraphemeToken::prev_grapheme` | phase 2 |
+| `GraphemeToken.next_grapheme` | method | `tugaphone::tokenizer::GraphemeToken::next_grapheme` | phase 2 |
+| `GraphemeToken.prev_syllable` | method | `tugaphone::tokenizer::GraphemeToken::prev_syllable` | phase 2 |
+| `GraphemeToken.next_syllable` | method | `tugaphone::tokenizer::GraphemeToken::next_syllable` | phase 2 |
+| `GraphemeToken.is_archaism` | method | `tugaphone::tokenizer::GraphemeToken::is_archaism` | phase 2 |
+| `GraphemeToken.is_nasal` | method | `tugaphone::tokenizer::GraphemeToken::is_nasal` | phase 2 |
+| `GraphemeToken.is_vocalic_hiatus` | method | `tugaphone::tokenizer::GraphemeToken::is_vocalic_hiatus` | phase 2 |
+| `GraphemeToken.is_diphthong` | method | `tugaphone::tokenizer::GraphemeToken::is_diphthong` | phase 2 |
+| `GraphemeToken.is_triphthong` | method | `tugaphone::tokenizer::GraphemeToken::is_triphthong` | phase 2 |
+| `GraphemeToken.is_falling_diphthong` | method | `tugaphone::tokenizer::GraphemeToken::is_falling_diphthong` | phase 2 |
+| `GraphemeToken.is_rising_diphthong` | method | `tugaphone::tokenizer::GraphemeToken::is_rising_diphthong` | phase 2 |
+| `GraphemeToken.is_nasal_diphthong` | method | `tugaphone::tokenizer::GraphemeToken::is_nasal_diphthong` | phase 2 |
+| `GraphemeToken.is_oral_diphthong` | method | `tugaphone::tokenizer::GraphemeToken::is_oral_diphthong` | phase 2 |
+| `GraphemeToken.is_digraph` | method | `tugaphone::tokenizer::GraphemeToken::is_digraph` | phase 2 |
+| `GraphemeToken.is_foreign_digraph` | method | `tugaphone::tokenizer::GraphemeToken::is_foreign_digraph` | phase 2 |
+| `GraphemeToken.is_trigraph` | method | `tugaphone::tokenizer::GraphemeToken::is_trigraph` | phase 2 |
+| `GraphemeToken.is_consonant_hiatus` | method | `tugaphone::tokenizer::GraphemeToken::is_consonant_hiatus` | phase 2 |
+| `GraphemeToken.is_vowel_grapheme` | method | `tugaphone::tokenizer::GraphemeToken::is_vowel_grapheme` | phase 2 |
+| `GraphemeToken.is_consonant_grapheme` | method | `tugaphone::tokenizer::GraphemeToken::is_consonant_grapheme` | phase 2 |
+| `GraphemeToken.idx_in_syllable` | method | `tugaphone::tokenizer::GraphemeToken::idx_in_syllable` | phase 2 |
+| `GraphemeToken.syllable_position` | method | `tugaphone::tokenizer::GraphemeToken::syllable_position` | phase 2 |
+| `GraphemeToken.phonological_weight` | method | `tugaphone::tokenizer::GraphemeToken::phonological_weight` | phase 2 |
+| `GraphemeToken.has_complex_onset` | method | `tugaphone::tokenizer::GraphemeToken::has_complex_onset` | phase 2 |
+| `GraphemeToken.is_onset_cluster` | method | `tugaphone::tokenizer::GraphemeToken::is_onset_cluster` | phase 2 |
+| `GraphemeToken.is_palatal` | method | `tugaphone::tokenizer::GraphemeToken::is_palatal` | phase 2 |
+| `GraphemeToken.triggers_palatalization` | method | `tugaphone::tokenizer::GraphemeToken::triggers_palatalization` | phase 2 |
+| `GraphemeToken.has_primary_stress` | method | `tugaphone::tokenizer::GraphemeToken::has_primary_stress` | phase 2 |
+| `GraphemeToken.has_secondary_stress` | method | `tugaphone::tokenizer::GraphemeToken::has_secondary_stress` | phase 2 |
+| `GraphemeToken.ipa` | method | `tugaphone::tokenizer::GraphemeToken::ipa` | phase 2 |
+| `GraphemeToken.features` | method | `tugaphone::tokenizer::GraphemeToken::features` | phase 2 |
+| `WordToken` | class | `tugaphone::tokenizer::WordToken` | phase 2 |
+| `WordToken.surface` | attribute | `tugaphone::tokenizer::WordToken::surface` | phase 2 |
+| `WordToken.word_idx` | attribute | `tugaphone::tokenizer::WordToken::word_idx` | phase 2 |
+| `WordToken.graphemes` | attribute | `tugaphone::tokenizer::WordToken::graphemes` | phase 2 |
+| `WordToken.syllables` | attribute | `tugaphone::tokenizer::WordToken::syllables` | phase 2 |
+| `WordToken.parent_sentence` | attribute | `tugaphone::tokenizer::WordToken::parent_sentence` | phase 2 |
+| `WordToken.dialect` | attribute | `tugaphone::tokenizer::WordToken::dialect` | phase 2 |
+| `WordToken.chunk_idx` | attribute | `tugaphone::tokenizer::WordToken::chunk_idx` | phase 2 |
+| `WordToken.normalized` | method | `tugaphone::tokenizer::WordToken::normalized` | phase 2 |
+| `WordToken.normalized_syllables` | method | `tugaphone::tokenizer::WordToken::normalized_syllables` | phase 2 |
+| `WordToken.n_syllables` | method | `tugaphone::tokenizer::WordToken::n_syllables` | phase 2 |
+| `WordToken.idx_in_sentence` | method | `tugaphone::tokenizer::WordToken::idx_in_sentence` | phase 2 |
+| `WordToken.is_archaic` | method | `tugaphone::tokenizer::WordToken::is_archaic` | phase 2 |
+| `WordToken.prev_word` | method | `tugaphone::tokenizer::WordToken::prev_word` | phase 2 |
+| `WordToken.next_word` | method | `tugaphone::tokenizer::WordToken::next_word` | phase 2 |
+| `WordToken.stressed_syllable_idx` | method | `tugaphone::tokenizer::WordToken::stressed_syllable_idx` | phase 2 |
+| `WordToken.hyphen_group` | method | `tugaphone::tokenizer::WordToken::hyphen_group` | phase 2 |
+| `WordToken.is_function_word` | method | `tugaphone::tokenizer::WordToken::is_function_word` | phase 2 |
+| `WordToken.is_hyphen_clitic` | method | `tugaphone::tokenizer::WordToken::is_hyphen_clitic` | phase 2 |
+| `WordToken.stress_token` | method | `tugaphone::tokenizer::WordToken::stress_token` | phase 2 |
+| `WordToken.stress_pattern` | method | `tugaphone::tokenizer::WordToken::stress_pattern` | phase 2 |
+| `WordToken.has_diphthongs` | method | `tugaphone::tokenizer::WordToken::has_diphthongs` | phase 2 |
+| `WordToken.has_nasal_sounds` | method | `tugaphone::tokenizer::WordToken::has_nasal_sounds` | phase 2 |
+| `WordToken.has_palatal_sounds` | method | `tugaphone::tokenizer::WordToken::has_palatal_sounds` | phase 2 |
+| `WordToken.has_consonant_clusters` | method | `tugaphone::tokenizer::WordToken::has_consonant_clusters` | phase 2 |
+| `WordToken.syllable_structure_pattern` | method | `tugaphone::tokenizer::WordToken::syllable_structure_pattern` | phase 2 |
+| `WordToken.phoneme_count` | method | `tugaphone::tokenizer::WordToken::phoneme_count` | phase 2 |
+| `WordToken.vowel_sequence` | method | `tugaphone::tokenizer::WordToken::vowel_sequence` | phase 2 |
+| `WordToken.consonant_sequence` | method | `tugaphone::tokenizer::WordToken::consonant_sequence` | phase 2 |
+| `WordToken.is_homograph` | method | `tugaphone::tokenizer::WordToken::is_homograph` | phase 2 |
+| `WordToken.is_irregular` | method | `tugaphone::tokenizer::WordToken::is_irregular` | phase 2 |
+| `WordToken.ipa` | method | `tugaphone::tokenizer::WordToken::ipa` | phase 2 |
+| `WordToken.features` | method | `tugaphone::tokenizer::WordToken::features` | phase 2 |
+| `Sentence` | class | `tugaphone::tokenizer::Sentence` | phase 2 |
+| `Sentence.surface` | attribute | `tugaphone::tokenizer::Sentence::surface` | phase 2 |
+| `Sentence.words` | attribute | `tugaphone::tokenizer::Sentence::words` | phase 2 |
+| `Sentence.dialect` | attribute | `tugaphone::tokenizer::Sentence::dialect` | phase 2 |
+| `Sentence.normalized` | method | `tugaphone::tokenizer::Sentence::normalized` | phase 2 |
+| `Sentence.n_words` | method | `tugaphone::tokenizer::Sentence::n_words` | phase 2 |
+| `Sentence.ipa` | method | `tugaphone::tokenizer::Sentence::ipa` | phase 2 |
+| `Sentence.features` | method | `tugaphone::tokenizer::Sentence::features` | phase 2 |
+| `demonstrate_transcription` | function | `tugaphone::tokenizer::demonstrate_transcription` | phase 2 |
 <!-- /inventory:tokenizer -->
 
 ### tugaphone.codeswitch

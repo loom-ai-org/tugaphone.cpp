@@ -17,7 +17,8 @@
     X(markov)                       \
     X(langdetect)                   \
     X(codeswitch)                   \
-    X(accent)
+    X(accent)                       \
+    X(tokenizer)
 
 namespace parity {
 #define TUGAPHONE_PARITY_DECLARE(name) std::string record_##name(const json_line::Value& line);
