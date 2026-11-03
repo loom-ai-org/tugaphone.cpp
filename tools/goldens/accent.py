@@ -7,9 +7,11 @@ matchers run over every gold-TSV word. Transform and user RespellRule
 patterns exercise the re-compatible engine over a pattern corpus that
 includes invalid patterns and templates.
 """
+import inspect
 import json
 import random
 import re
+import sys
 
 import tugaphone.accent as accent
 from tugaphone.registry import list_dialects
@@ -82,12 +84,13 @@ PATTERNS = [
     "(?(1)a|b)", "(a)?(?(1)b|c)", "(?P<n>a)?(?(n)b|c)", "(?#comment)a", "(?i)a", "(?i:a)A", "(?-i:a)",
     "a(?i)b", "(?x) a b # c", "(?x)[ ]a", "(?a)\\w+", "(?u)\\w+", "(?a:\\w)\\w", "(?au)a", "(?L)a", "(?i-i:a)",
     "(?-a:x)", "(?z)", "(?i)[^a]", "(?i)[a-z]+", "(?i)ß", "(a)(?=(b))", "(?!(a)b)a", "(a)\\1+", "(?i)(a)\\1",
-    "(?<=(a))b", "(?<=\\b)a", "(?<!^)a", "(a)(?<=\\1)", "(?P<a1>x)", "(?s:.)\\n",
+    "(?<=(a))b", "(?<=\\b)a", "(?<!^)a", "(a)(?<=\\1)", "(?P<a1>x)", "(?s:.)\\n", "(?x)a | b",
     # errors
     "(", ")", "[", "[a", "a**", "*", "+a", "?", "\\", "a\\", "(?P<1>a)", "(?P<x>a)(?P<x>b)", "(?P=y)", "\\2",
     "(a)\\2", "\\q", "[\\q]", "[z-a]", "[\\w-z]", "\\x4", "\\u00", "\\U00110000", "\\400", "(?<", "(?<x", "(?",
     "(?P", "(?Px)", "a{3,2}", "a{4294967295}", "{1}", "(a)(?(2)b)", "(?(0)a)", "(?(a)b)", "(a)(?(1)b|c|d)",
     "(?<=(?P<g>a)(?P=g))", "(?i", "(?i-", "(?-)", "(?i-:a)", "[\\d-z]", "(?#unterminated", "(?<=a)(?<=(b)\\1)",
+    "(?<=(a)(?<=a)\\1)b", "(?:(?i)a)", "a|(?i)b",
     # alternation and Unicode classes
     "a|b", "a|", "|a", "ab|a", "a|ab", "(a|ab)(c|bcd)(d*)", "\\w+", "\\d+", "\\s+", "\\W+", "[^\\W\\d_]+", "\\D+",
     "\\S+",
@@ -99,6 +102,92 @@ REPLS = ["X", "<\\g<0>>", "", "\\n", "\\\\", "\\-", "\\q", "\\0", "\\07", "\\101
 LONG = [("a*", "a"), (".*", "x"), ("(a|b)*", "ab"), ("(?:ɐ|a)+", "ɐa"), ("(a|b)*?$", "ab"), ("(?:ab)+", "ab"),
         ("\\w+", "aé"), ("(?>a|b)*", "ab"), ("(?:a|b)*+", "ab"), ("(?<=a)b", "ab"), ("([^ ]+)", "ʀa"),
         ("(?:(a)|b)*", "ab"), ("(?=a)a*", "a")]
+
+# Deeply nested patterns. Python's re parser recurses once per level, and from
+# the top level of a script Transform.apply and RespellRule.matches raise
+# RecursionError at 495 nested groups or 990 nested conditionals. The C++
+# parser raises at the same depth and must not overflow its stack below it.
+NESTING = {
+    "(?:": lambda n: "(?:" * n + "a" + ")" * n,
+    "(": lambda n: "(" * n + "a" + ")" * n,
+    "(?:empty": lambda n: "(?:" * n + ")" * n,
+    "(?:|": lambda n: "(?:" * n + "|" + ")" * n,
+    "(?=": lambda n: "(?=" * n + "a" + ")" * n,
+    "(?!": lambda n: "(?!" * n + "b" + ")" * n,
+    "(?<=": lambda n: "(?<=" * n + "a" + ")" * n,
+    "(?>": lambda n: "(?>" * n + "a" + ")" * n,
+    "(?i:": lambda n: "(?i:" * n + "a" + ")" * n,
+    "(?:)*": lambda n: "(?:" * n + "a" + ")*" * n,
+    "()+": lambda n: "(" * n + "a" + ")+" * n,
+    "(?(1)": lambda n: "(a)" + "(?(1)" * n + "a" + ")" * n,
+    "(?(1)empty": lambda n: "(a)" + "(?(1)" * n + ")" * n,
+    "(?:(?(1)": lambda n: "(a)" + "(?:(?(1)" * n + "a" + "))" * n,
+    "(?(1)a|": lambda n: "(a)" + "(?(1)a|" * n + "b" + ")" * n,
+    "(?:)*+": lambda n: "(?:" * n + "a" + ")*+" * n,
+    "(?>(?:)*+)": lambda n: "(?>(?:" * n + "a" + ")*+)" * n,
+}
+GROUP_DEPTHS = [400, 494, 495, 496, 499, 500, 501, 1000, 20000]
+DEPTHS = {"(?(1)": [989, 990, 991, 1000, 20000], "(?(1)empty": [990, 991, 1000, 20000],
+          "(?:(?(1)": [329, 330, 1000, 20000], "(?(1)a|": [989, 990, 991],
+          "(?>(?:)*+)": [246, 247, 248, 494, 495, 496]}
+
+
+# Patterns for the matcher's guards on empty iterations and empty groups. A
+# conditional in a repeat matches differently once its group is set, so one
+# more iteration at the same position changes the result. Each group is shown
+# in the replacement.
+GUARD_PATTERNS = [
+    # lazy repeats whose body can match empty
+    "((?(1)a|))*?b", "((?(1)a|)){0,3}?$", "((?(1)|a)b?|(?(1)a|)){0,3}?$",
+    # possessive repeats whose body can match empty
+    "((?(1)a|))*+", "((?(1)a|b?))*+$", "((?(2)b|)()|a)*+b", "(bb|(?(1)a|))*+$",
+    # minimum iterations whose body can match empty
+    "((?(1)a|))+", "((?(1)b|))+b?", "((?(1)a|)){1,3}$", "(b?(?(1)a|)|b?)+$",
+    "((?(1)(cb*+c*?c??){1,3}?|(?<=(a|b))++(?(2)bb??b*+|a{0,}+b??a?)?+\\B)??|a?+(?<![ab])?){1,3}?a+?b*?(.{1,3}?){0,2}",
+    # backreferences to a group that matched the empty string
+    "(a*)b\\1", "(a?)\\1", "()\\1", "(?P<x>a*)(?P=x)b", "(a*)(?(1)x|y)", "((?(1)|a))+",
+]
+GUARD_SUBJECTS = ["", "a", "b", "aa", "ab", "ba", "aab", "bab", "bcaabccb", "caacaaa"]
+
+
+def guards():
+    records = []
+    for pattern in GUARD_PATTERNS:
+        repl = "<" + "|".join("\\g<%d>" % g for g in range(re.compile(pattern).groups + 1)) + ">"
+        for s in GUARD_SUBJECTS:
+            t = accent.Transform(kind="regex", pattern=pattern, replacement=repl)
+            records.append(["transform", "regex", pattern, repl, True, s, common.call(t.apply, s)])
+            records.append(["user_rule", pattern, s, common.call(
+                lambda: [list(span) for span in accent.RespellRule("u", pattern, "").matches(s)])])
+    return records
+
+
+def top_level_call(fn):
+    """fn(), with the recursion budget of a call from the top level of a
+    script. At the top level, the function that fn calls runs in frame 2;
+    here it runs in frame len(stack) + 2, so the limit grows by len(stack)."""
+    re.purge()
+    limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(limit + len(inspect.stack(0)))
+    try:
+        return fn()
+    except Exception as exc:
+        return {"err": type(exc).__name__}
+    finally:
+        sys.setrecursionlimit(limit)
+
+
+def nesting():
+    records = []
+    for shape, build in NESTING.items():
+        for n in DEPTHS.get(shape, GROUP_DEPTHS):
+            pattern = build(n)
+            t = accent.Transform(kind="regex", pattern=pattern, replacement="X")
+            records.append(["transform", "regex", pattern, "X", True, "aab", top_level_call(lambda: t.apply("aab"))])
+            records.append(["user_rule", pattern, "aab", top_level_call(
+                lambda: [list(span) for span in accent.RespellRule("u", pattern, "").matches("aab")])])
+    return records
+
 
 WORD_PATTERNS = ["binho", "a", "", "o carro", "a.b", "(", "ç", "Ç", "ab c", "-", "lh", "VINHO", "ß", "ſ"]
 
@@ -250,7 +339,10 @@ def corpora(repo):
             long_subjects.append(["transform", "regex", pattern, "X", True, s, common.call(t.apply, s)])
             long_subjects.append(["user_rule", pattern, s, common.call(
                 lambda: [list(span) for span in accent.RespellRule("u", pattern, "").matches(s)])])
+        nested = nesting()
+        guarded = guards()
     finally:
         accent.phonemize = saved
     return [("constants", consts), ("rule_matches", rules), ("helpers", helpers), ("respell", respelled),
-            ("regex", regex), ("overlay", overlay), ("force_accent", forced), ("long_subjects", long_subjects)]
+            ("regex", regex), ("overlay", overlay), ("force_accent", forced), ("long_subjects", long_subjects),
+            ("nesting", nested), ("matcher_guards", guarded)]

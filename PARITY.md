@@ -98,11 +98,46 @@ The goldens hold the score and the detected language of many words. These are th
 
 The eight default respelling rules are written as code, not as regular expressions. A user rule or a `Transform` is a regular expression that the user supplies at run time. For these, the port has an engine in `src/pyre.cpp` that gives the same matches as Python's `re` module. Its parser is a port of `re._parser`: it accepts the same syntax and raises `re.error` for the same patterns. Its matcher follows the `_sre` rules for case folding, word boundaries and `$` before a final newline. It also follows them for a repeat that matches the empty string, and for an empty match after a match in `sub`. The engine does not support `\N{...}`. It raises NotImplementedError for it.
 
-The matcher keeps its continuations, backtrack points and group mark changes on heap stacks. Its C++ stack depth thus grows with the nesting of lookarounds, atomic groups and possessive repeats in the pattern, not with the subject. The goldens hold subjects of 100,000 code points, and ctest runs the accent records on a thread with a 512 KB stack.
+Python's parser recurses once for each nested group and once for each nested conditional. When a pattern nests deeper than the recursion limit allows, Python raises RecursionError. The port parses and compiles with heap stacks, so its C++ stack does not grow with the nesting. It counts the frames that Python's parser would use, its helper calls included, and raises RecursionError at the same point. For a call of `Transform.apply` or `RespellRule.matches` from the top level of a script, this point is 496 nested groups or 991 nested conditionals. A Python caller that already uses more frames reaches the limit at a smaller depth: there Python raises and the port does not. Python also raises earlier when its parser issues a warning, such as for a possible nested set, because the warnings module adds frames. The port issues no warnings.
+
+The matcher keeps its continuations, backtrack points and group mark changes on heap stacks, so its C++ stack does not grow with the subject. It calls itself once for each nested lookaround, atomic group and possessive repeat, and the parser limits that nesting to 495 levels. Each level uses about 0.5 KB of stack in a Release build and about 1 KB in a Debug or sanitizer build. The engine thus needs a stack of 1 MB on the thread that calls it. The main thread of a Linux process usually has 8 MB. The goldens hold subjects of 100,000 code points and patterns nested from 400 to 20,000 levels deep. ctest runs the accent records on a thread with a 1 MB stack.
+
+The table gives the smallest stack on which all the `nesting` records pass, measured in steps of 4 KB with `tugaphone_parity --stack-kb`. The record that needs the most stack is 495 nested possessive repeats, `(?:` ... `a` ... `)*+`. This stack includes about 75 KB that the parity harness uses itself.
+
+| Build | Stack |
+| --- | ---: |
+| GCC 16, Release (`-O3`) | 320 KB |
+| clang 23, Release (`-O3`) | 340 KB |
+| GCC 16, Debug (`-O0`) | 568 KB |
+| clang 23, Debug with ASan and UBSan (`-O1`, the CI `sanitizers` job) | 552 KB |
 
 `respell_word`, `respell` and `force_accent` take the phonemizer as an argument. Without one, they use the lattice phonemizer, `lattice_core::phonemize`. The accent goldens use a deterministic stand-in phonemizer, which `tools/goldens/accent.py` and `tests/parity/accent.cpp` both define. The stand-in tests the hill-climb, the case restoration, the word spans and the overlay stages. The lattice-engine goldens call `respell_word` and `force_accent` with the default phonemizer.
 
-The goldens hold the default rule matches over every gold word. They hold the respelling of every gold word for its own lect and for pt-PT-x-porto, and of the mixed sentences, with each dialect in turn. They also hold 240 regular expressions, valid and invalid, over Unicode subjects, with and without IGNORECASE.
+The goldens hold the default rule matches over every gold word. They hold the respelling of every gold word for its own lect and for pt-PT-x-porto, and of the mixed sentences, with each dialect in turn. They also hold 244 regular expressions, valid and invalid, over Unicode subjects, with and without IGNORECASE. The corpus `nesting` holds groups, lookarounds, repeats, possessive repeats and conditionals nested at depths on both sides of Python's recursion limit. Its conditionals nest in the "yes" branch and in the "no" branch. The corpus `matcher_guards` holds repeats whose body can match the empty string and backreferences to empty groups. In these patterns, a conditional changes its branch once its group is set, so each guard of the matcher on empty iterations changes the result.
+
+### Speed and memory of the regular expression engine
+
+`tools/bench_regex.py` measures the engine against Python's `re`. Each case is one `re.sub(pattern, "X", subject, flags=re.I)` over a long subject. The script runs the case in a new Python process and through `tugaphone_parity` in a new C++ process, three times each. It shows the shortest wall time and the peak RSS of each process, and it checks that the C++ result is equal to Python's. The `baseline` row uses a pattern that never matches: it shows the cost of process start, data loading and golden parsing.
+
+```
+python -I tools/bench_regex.py build
+```
+
+The table comes from a Release build with gcc on x86-64. The machine ran other jobs, with a load of about 20 on 8 CPUs, so the times vary by about 30 % from run to run.
+
+| Case | Subject (code points) | Python s | C++ s | Python MB | C++ MB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `baseline` | 1,000,000 | 0.05 | 0.11 | 15 | 22 |
+| `a*` | 1,000,000 | 0.05 | 0.20 | 15 | 144 |
+| `\w+` | 1,000,000 | 0.04 | 0.28 | 15 | 146 |
+| `(a\|b)*` | 1,000,000 | 0.19 | 0.74 | 92 | 422 |
+| `(?:(a)\|b)*` | 1,000,000 | 0.21 | 0.69 | 158 | 369 |
+| `(?:(?=(a\|b))\1)*` | 1,000,000 | 0.17 | 0.74 | 92 | 374 |
+| `(?:a\|b)*+` | 1,000,000 | 0.05 | 0.18 | 15 | 15 |
+| `(?=(a\|b)*$)`, quadratic | 5,000 | 1.00 | 8.09 | 15 | 15 |
+| `(a+)+c`, exponential | 18 | 0.06 | 0.15 | 15 | 15 |
+
+Time and memory grow linearly with the subject in both engines, but the C++ engine is 2 to 8 times slower and uses up to 10 times more memory. The matcher keeps a backtrack point and a continuation frame on the heap for each iteration of a repeat. sre matches a repeat of one character in a single loop that keeps no state per iteration. A pattern that scans the rest of the subject from each position is quadratic in both engines. A pattern with nested repeats that cannot match is exponential in both engines. The user patterns of an accent overlay apply to one word or one sentence at a time, so these costs are small in normal use.
 
 ## The lattice engine
 
