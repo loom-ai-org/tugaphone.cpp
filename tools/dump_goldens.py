@@ -29,6 +29,9 @@ MODULES = [
     "codeswitch",
     "accent",
     "lattice_core",
+    "package",
+    "plugin",
+    "cli",
 ]
 
 

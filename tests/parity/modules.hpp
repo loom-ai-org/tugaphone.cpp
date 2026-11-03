@@ -18,7 +18,10 @@
     X(langdetect)                   \
     X(codeswitch)                   \
     X(accent)                       \
-    X(lattice_core)
+    X(lattice_core)                 \
+    X(package)                      \
+    X(plugin)                       \
+    X(cli)
 
 namespace parity {
 #define TUGAPHONE_PARITY_DECLARE(name) std::string record_##name(const json_line::Value& line);

@@ -90,6 +90,11 @@ add_library(tugaphone
     src/codeswitch.cpp
     src/accent.cpp
     src/lattice_core.cpp
+    src/tugaphone.cpp
+    src/plugin.cpp
+    src/pyio.cpp
+    src/argparse.cpp
+    src/cli.cpp
 )
 add_library(tugaphone::tugaphone ALIAS tugaphone)
 target_include_directories(tugaphone
@@ -99,9 +104,11 @@ target_include_directories(tugaphone
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+# plugin.hpp derives from orthography2ipa::SyllabifierPlugin, so orthography2ipa
+# is part of the public interface.
 target_link_libraries(tugaphone
-    PUBLIC tugalex::tugalex
-    PRIVATE orthography2ipa::orthography2ipa bifonia::bifonia silabificador::silabificador
+    PUBLIC tugalex::tugalex orthography2ipa::orthography2ipa
+    PRIVATE bifonia::bifonia silabificador::silabificador
     PRIVATE ZLIB::ZLIB)
 target_compile_definitions(tugaphone PRIVATE TUGAPHONE_DEFAULT_DATA_DIR="${_tugaphone_default_data}")
 set_target_properties(tugaphone PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -114,7 +121,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(tugaphone PRIVATE -ffp-contract=off)
 endif()
 
-install(TARGETS tugaphone EXPORT tugaphoneTargets
+# The command line, python -m tugaphone.
+add_executable(tugaphone_cli src/main.cpp)
+set_target_properties(tugaphone_cli PROPERTIES OUTPUT_NAME tugaphone)
+target_include_directories(tugaphone_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(tugaphone_cli PRIVATE tugaphone)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(tugaphone_cli PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+install(TARGETS tugaphone tugaphone_cli EXPORT tugaphoneTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -161,6 +177,9 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/codeswitch.cpp
         tests/parity/accent.cpp
         tests/parity/lattice_core.cpp
+        tests/parity/package.cpp
+        tests/parity/plugin.cpp
+        tests/parity/cli.cpp
     )
     target_include_directories(tugaphone_parity PRIVATE tests)
     # The phase-internal headers under src/ expose the private functions the goldens call.
