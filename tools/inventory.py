@@ -8,8 +8,9 @@ in the module that defines it. The CLI flags and the data files are listed
 too.
 
 Each row maps the name to its C++ name and a status. A module listed in
-PORTED has the status "phase 1", and the script checks that each C++ name
-is declared under include/. Every other module has the status "later phase".
+PORTED has the status of the phase that ports it, and the script checks that
+each C++ name is declared under include/. Every other module has the status
+"later phase".
 
 PARITY.md holds one section per module. The script replaces the text
 between "<!-- inventory:<module> -->" and "<!-- /inventory:<module> -->" and
@@ -27,12 +28,24 @@ import tugaphone
 
 PKG = pathlib.Path(tugaphone.__file__).parent
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PORTED = {"registry", "dialects", "text_normalization", "number_utils", "version"}
+PORTED = {"registry": "phase 1", "dialects": "phase 1", "text_normalization": "phase 1", "number_utils": "phase 1",
+          "version": "phase 1", "langdetect": "phase 3", "codeswitch": "phase 3", "accent": "phase 3"}
 # Python names whose C++ form is not <namespace>::<name>.
 CPP_NAMES = {
     ("dialects", "LEXICON"): "tugaphone::dialects::LEXICON()",
     ("dialects", "AO1990"): "tugaphone::dialects::AO1990()",
     ("version", "__version__"): "tugaphone::version::version",
+    ("langdetect", "LANGS"): "tugaphone::langdetect::langs()",
+    ("langdetect", "PORTUGUESE_KEEP"): "tugaphone::langdetect::portuguese_keep()",
+    ("accent", "DEFAULT_RESPELL_RULES"): "tugaphone::accent::default_respell_rules()",
+    ("accent", "RespellRule.name"): "tugaphone::accent::RespellRule::name()",
+    ("accent", "RespellRule.pattern"): "tugaphone::accent::RespellRule::pattern()",
+    ("accent", "RespellRule.replacement"): "tugaphone::accent::RespellRule::replacement()",
+    ("accent", "RespellRule.note"): "tugaphone::accent::RespellRule::note()",
+    ("accent", "Transform.to_dict"): "tugaphone::accent::Transform::to_dict_json",
+    ("accent", "Transform.from_dict"): "tugaphone::accent::Transform::from_dict_json",
+    ("accent", "AccentOverlay.to_dict"): "tugaphone::accent::AccentOverlay::to_dict_json",
+    ("accent", "AccentOverlay.from_dict"): "tugaphone::accent::AccentOverlay::from_dict_json",
 }
 CALLABLE_SETS = {"LABEL_HEADS", "PLURAL_FUNCTION_WORDS", "FEMININE_DETERMINERS", "MASCULINE_DETERMINERS",
                  "FUNCTION_WORDS", "RANGE_LINKS", "UNIT_NAMES"}
@@ -113,7 +126,7 @@ def module_table(module):
             cpp = cpp_name(module, name)
             if not declared(cpp):
                 raise SystemExit(f"{module}.{name}: {cpp} is not declared under include/")
-            status = "phase 1"
+            status = PORTED[module]
             cell = f"`{cpp}`"
         else:
             status, cell = "later phase", "none yet"
@@ -150,7 +163,7 @@ def data_table():
             ours = ROOT / "data" / rel
             readers = data_readers(rel)
             verbatim = ours.is_file() and ours.read_bytes() == path.read_bytes()
-            status = "phase 1" if verbatim and readers <= PORTED else "later phase"
+            status = max(PORTED[r] for r in readers) if verbatim and readers <= PORTED.keys() else "later phase"
             counts[status] = counts.get(status, 0) + 1
             lines.append(f"| `data/{rel}` | data file, read by {', '.join(sorted(readers))} | `data/{rel}` (verbatim) "
                          f"| {status} |")
