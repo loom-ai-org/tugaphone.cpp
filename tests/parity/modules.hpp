@@ -18,6 +18,7 @@
     X(langdetect)                   \
     X(codeswitch)                   \
     X(accent)                       \
+    X(lattice_core)                 \
     X(tokenizer)
 
 namespace parity {

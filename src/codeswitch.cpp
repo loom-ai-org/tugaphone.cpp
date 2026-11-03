@@ -9,6 +9,7 @@
 #include "codeswitch_internal.hpp"
 #include "detail.hpp"
 #include "json.hpp"
+#include "o2i_registry.hpp"
 
 namespace tugaphone::codeswitch {
 
@@ -137,14 +138,15 @@ std::string contact_code(std::string_view contact) {
     throw KeyError("'" + std::string(contact) + "'");
 }
 
-// _contact_engine: one cached orthography2ipa engine per contact lattice.
-const orthography2ipa::G2P& contact_engine(const std::string& code) {
-    static std::mutex mutex;
+// _contact_engine(code).transcribe(word): one cached orthography2ipa engine
+// per contact lattice. Building the engine and transcribing both read the
+// orthography2ipa registries, so both hold detail::o2i_registry_mutex().
+std::string contact_engine_transcribe(const std::string& code, const std::string& word) {
+    const std::lock_guard<std::mutex> lock(detail::o2i_registry_mutex());
     static std::map<std::string, std::unique_ptr<orthography2ipa::G2P>> engines;
-    std::lock_guard<std::mutex> lock(mutex);
     auto& slot = engines[code];
     if (!slot) slot = std::make_unique<orthography2ipa::G2P>(code);
-    return *slot;
+    return slot->transcribe(word);
 }
 
 }  // namespace
@@ -242,7 +244,7 @@ std::string contact_language(std::string_view token, std::string_view default_si
 }
 
 std::string transcribe_contact(std::string_view word, std::string_view contact) {
-    const std::string ipa = contact_engine(contact_code(contact)).transcribe(std::string(word));
+    const std::string ipa = contact_engine_transcribe(contact_code(contact), std::string(word));
     return internal::nativize(ipa, contact == "en");
 }
 

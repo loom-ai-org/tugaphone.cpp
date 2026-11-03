@@ -9,6 +9,7 @@
 #include "detail.hpp"
 #include "json.hpp"
 #include "pyre.hpp"
+#include "tugaphone/lattice_core.hpp"
 #include "tugaphone/registry.hpp"
 #include "unicode_norm.hpp"
 
@@ -87,7 +88,7 @@ std::string run_phonemizer(const Phonemizer& given, const std::string& text, con
         std::lock_guard<std::mutex> lock(phonemizer_mutex());
         p = default_phonemizer();
     }
-    if (!p) throw NotImplementedError("accent: the lattice phonemizer is not linked; pass a Phonemizer");
+    if (!p) return lattice_core::phonemize(text, lect);
     return p(text, lect);
 }
 

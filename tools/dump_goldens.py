@@ -28,6 +28,7 @@ MODULES = [
     "langdetect",
     "codeswitch",
     "accent",
+    "lattice_core",
     "tokenizer",
 ]
 
