@@ -142,6 +142,7 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/dialects.cpp
         tests/parity/text_normalization.cpp
         tests/parity/number_utils.cpp
+        tests/parity/version.cpp
     )
     target_include_directories(tugaphone_parity PRIVATE tests)
     target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB)
