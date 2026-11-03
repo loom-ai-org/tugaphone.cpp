@@ -19,6 +19,7 @@
     X(codeswitch)                   \
     X(accent)                       \
     X(lattice_core)                 \
+    X(tokenizer)                    \
     X(package)                      \
     X(plugin)                       \
     X(cli)

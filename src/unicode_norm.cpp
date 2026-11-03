@@ -32,21 +32,6 @@ bool in_ranges(const char32_t (&table)[N][2], char32_t c) {
     return it != std::begin(table) && c <= (*(it - 1))[1];
 }
 
-void decompose_into(U32& out, char32_t c) {
-    if (is_hangul(c)) {
-        const char32_t s = c - kSBase;
-        out.push_back(kLBase + s / kNCount);
-        out.push_back(kVBase + (s % kNCount) / kTCount);
-        if (s % kTCount) out.push_back(kTBase + s % kTCount);
-        return;
-    }
-    if (const auto* row = find_row(kDecomp, c)) {
-        out.append(kDecompPool + (*row)[1], (*row)[2]);
-    } else {
-        out.push_back(c);
-    }
-}
-
 char32_t compose_pair(char32_t a, char32_t b) {
     const auto* end = std::end(kCompose);
     const auto* it = std::lower_bound(std::begin(kCompose), end, std::make_pair(a, b),
@@ -56,31 +41,6 @@ char32_t compose_pair(char32_t a, char32_t b) {
     return (it != end && (*it)[0] == a && (*it)[1] == b) ? (*it)[2] : 0;
 }
 }  // namespace
-
-int combining(char32_t c) {
-    const auto* row = find_row(kCombiningClass, c);
-    return row ? static_cast<int>((*row)[1]) : 0;
-}
-
-U32 nfd(U32View s) {
-    U32 out;
-    out.reserve(s.size());
-    for (char32_t c : s) decompose_into(out, c);
-    // Canonical ordering: a stable sort of each run of non-starters.
-    size_t i = 0;
-    while (i < out.size()) {
-        if (combining(out[i]) == 0) {
-            ++i;
-            continue;
-        }
-        size_t j = i;
-        while (j < out.size() && combining(out[j]) != 0) ++j;
-        std::stable_sort(out.begin() + static_cast<std::ptrdiff_t>(i), out.begin() + static_cast<std::ptrdiff_t>(j),
-                         [](char32_t a, char32_t b) { return combining(a) < combining(b); });
-        i = j;
-    }
-    return out;
-}
 
 U32 nfc(U32View s) {
     U32 out = nfd(s);

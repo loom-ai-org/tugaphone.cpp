@@ -90,6 +90,8 @@ add_library(tugaphone
     src/codeswitch.cpp
     src/accent.cpp
     src/lattice_core.cpp
+    src/nfd.cpp
+    src/tokenizer.cpp
     src/tugaphone.cpp
     src/plugin.cpp
     src/pyio.cpp
@@ -180,6 +182,7 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/package.cpp
         tests/parity/plugin.cpp
         tests/parity/cli.cpp
+        tests/parity/tokenizer.cpp
     )
     target_include_directories(tugaphone_parity PRIVATE tests)
     # The phase-internal headers under src/ expose the private functions the goldens call.
