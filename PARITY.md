@@ -137,7 +137,7 @@ Some engine records wait on fixes in orthography2ipa.cpp. `tests/parity/expected
 
 With orthography2ipa.cpp PRs #1 and #5 to #18 merged into the submodule, every engine record matches.
 
-orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads, and CI runs it under ThreadSanitizer.
+orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads, and CI runs it under ThreadSanitizer. The test `threads_package` makes the first calls of ten package entry points in ten threads: the `TugaPhonemizer` methods, the plugin classes and the command line. With the lock made thread-local, ThreadSanitizer reports 35 races in it.
 
 ## The package API, the plugin and the command line
 
@@ -151,9 +151,14 @@ The goldens of these parts are these:
 | `phonemize_sentence` of each gold-TSV row and of the test strings through 7 lects | 20,453 |
 | The acceptance sentence in each lect, `is_supported`, `regional_dialect`, `force_accent`, `respell` and the constants | 552 |
 | The plugin: `syllabify`, `transcribe`, `transcribe_word` with and without a context, `force_accent` and the constants | 9,322 |
-| The command line: help at 11 `COLUMNS` values, 42 error cases at 2 widths, and 128 runs | 333 |
+| The command line: help at 15 `COLUMNS` values, 42 error cases at 2 widths, 168 runs, 8 runs with arguments that are not UTF-8, and 17 runs that fail outside argparse or change the environment | 442 |
+| The error lines of overlay JSON, UTF-8 decoding and regular expressions, in the process | 7,036 |
 
-The command-line records run `python -I -m tugaphone` and the C++ executable on the same arguments, and compare standard output, standard error and the exit status. When Python ends with a traceback, for example for an overlay file that does not exist, the record holds the exception class only, because the traceback names local paths. The C++ executable then prints one line with the same class and exits with status 1.
+The command-line records run `python -I -m tugaphone` and the C++ executable on the same arguments, and compare standard output, standard error and the exit status. When Python ends with a traceback, for example for an overlay file that does not exist, the record holds the last line of the traceback: the exception class and its message. The C++ executable prints that line alone and exits with status 1. The path of this repository reads as `<root>` in that line. This holds for the exceptions of the libraries too: an unclosed `<phoneme>` tag gives `orthography2ipa.markup.MarkupError`, and a lexicon cache that cannot be made gives the `OSError` subclass of its errno, with the path that failed.
+
+Some command-line records change how the process runs. Six records set the lexicon cache under a file, under `/proc`, under `/dev/null`, or under a home or cache directory that does not exist. Four records write standard output to `/dev/full`: Python then exits with status 120 and prints the `OSError` of the flush, and so does the C++ executable. Four records run standard output on a pseudo-terminal of a given width with `COLUMNS` unset, so the help wraps at the width of the terminal. Arguments that are not UTF-8 decode as Python's `surrogateescape` does, and an error message shows such a byte as `\udcff`. A `COLUMNS` value above the range of `long` means a width that never wraps, as a Python int does.
+
+Other records run in the process and compare the line that an uncaught exception prints. They hold 2,016 malformed and valid overlay JSON texts, 4,863 byte strings decoded as UTF-8, and 157 malformed regular expressions and replacement templates. So the `json.decoder.JSONDecodeError` message with its line, column and code-point position, the `UnicodeDecodeError` byte range and reason, and the `re.error` position match Python. The test `cli_process` checks two cases that no golden can hold: without the tugalex or bifonia data, the executable prints one error line and exits with status 1, and the benchmark exits with status 120 when standard output is `/dev/full`.
 
 The acceptance sentence is "Tenho 23 anos, Sr. Silva; li o Cap. XII.". The Python command line has no `--contact` flag, so the contact modes of this sentence are in the `phonemize_sentence` records. The command-line records hold the sentence in every lect, and the `--contact` arguments as the error that argparse gives.
 
@@ -176,7 +181,7 @@ With orthography2ipa.cpp PRs #1 and #5 to #18 merged into the submodule, every p
 
 `tugaphone_benchmark` is the port of `scripts/benchmark.py`. It reads the gold fixtures in `tests/data/gold/`, scores the rules-only transcription of each word, and writes `benchmarks/results.json` and `docs/scoreboard.md` under the directory it runs in. `TUGAPHONE_BENCHMARK_ROOT` names another directory. `--refresh-fixtures` downloads the gold in Python. The C++ tool does not download, so it prints a message and exits with status 2.
 
-The goldens hold every fixture word with its transcription, edit distance, stress result and confusion pairs. They hold probes of the scoring helpers, including strings of 200 code points and more for the difflib "popular element" rule, `score_dialect` with 8 limits, and 31 runs of `main`. A run with no arguments gives the same summary lines and the same two report files, byte for byte.
+The goldens hold every fixture word with its transcription, edit distance, stress result and confusion pairs. They hold probes of the scoring helpers, including strings of 200 code points and more for the difflib "popular element" rule, `score_dialect` with 8 limits, and 35 runs of `main`. A run with no arguments gives the same summary lines and the same two report files, byte for byte. When `main` raises, the record holds the last line of the traceback, with the scratch root as `<root>`. Two runs have a regular file where `main` makes the `benchmarks` directory: the run that writes the reports prints its summary lines, then `FileExistsError`. `--dialect` joins the fixture path as `os.path.join` does, so `--dialect /dev/null` reads `/dev/null.tsv`.
 
 The reports that the Python repository commits at the tag do not match what its script gives with the reference packages. For example, pt-BR has a PER of 0.2448 in the committed file and 0.2365 from the script. The C++ tool reproduces the script.
 
@@ -620,7 +625,7 @@ orthography2ipa.cpp keeps its spec cache in a global map with no lock. The token
 
 ### tugaphone.plugin
 
-The OVOS plugin registration is not applicable. A Python package registers a plugin with an entry point, and C++ has no entry points. A C++ program that wants `SilabificadorSyllabifier` as the syllabifier of orthography2ipa.cpp calls `orthography2ipa::register_syllabifier_plugin`. tugaphone 1.4.16a1 itself declares no entry point: the `orthography2ipa.syllabify` group gets its Portuguese syllabifier from orthography2ipa.
+The OVOS plugin registration is not applicable. A Python package registers a plugin with an entry point, and C++ has no entry points. A C++ program that wants `SilabificadorSyllabifier` as the syllabifier of orthography2ipa.cpp calls `orthography2ipa::register_syllabifier_plugin`. orthography2ipa.cpp keeps its plugins in a global map with no lock, and the lock that tugaphone holds around a transcription is not in the installed headers. So the program registers the plugin before its first transcription, while it has one thread. tugaphone 1.4.16a1 itself declares no entry point: the `orthography2ipa.syllabify` group gets its Portuguese syllabifier from orthography2ipa.
 
 <!-- inventory:plugin -->
 | Python name | Kind | C++ name | Status |

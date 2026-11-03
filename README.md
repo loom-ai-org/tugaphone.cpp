@@ -24,7 +24,17 @@ tugaphone force-accent "o vinho verde" --lect pt-PT-x-porto --mode respell
 tugaphone list
 ```
 
-The build also makes `tugaphone_benchmark`, the port of `scripts/benchmark.py`. Run it from the root of this repository. It scores the rules-only transcription against the gold fixtures in `tests/data/gold/` and writes `benchmarks/results.json` and `docs/scoreboard.md`, as the Python script does. The fixtures are samples of the TigreGotico/portuguese-unified-pronunciation-lexicon dataset, under its CC BY-SA 4.0 licence.
+The build also makes `tugaphone_benchmark`, the port of `scripts/benchmark.py`. It scores the rules-only transcription against the gold fixtures in `tests/data/gold/` and writes `benchmarks/results.json` and `docs/scoreboard.md`, as the Python script does. The fixtures are samples of the TigreGotico/portuguese-unified-pronunciation-lexicon dataset, under its CC BY-SA 4.0 licence. The tool is not installed. To run it from a build tree, give it the repository root and the three data directories of the source tree:
+
+```
+TUGAPHONE_BENCHMARK_ROOT=$PWD \
+TUGAPHONE_DATA_DIR=$PWD/data \
+TUGALEX_DATA_DIR=$PWD/third_party/tugalex.cpp/data \
+BIFONIA_DATA_DIR=$PWD/third_party/bifonia.cpp/data \
+build/tugaphone_benchmark --limit 20
+```
+
+Without `TUGAPHONE_BENCHMARK_ROOT`, the tool uses the working directory as the root. Without the data variables, the library reads the installed data, so the tool works from a build tree only after `cmake --install`.
 
 ## Dependencies
 
@@ -36,7 +46,9 @@ To use installed copies of the four ports, set `-DTUGAPHONE_USE_SYSTEM_DEPS=ON`.
 
 ## Data files
 
-The library reads its data at run time. `cmake --install` puts the files in `<prefix>/share/tugaphone`, and the library looks there by default. To use another directory, set the environment variable `TUGAPHONE_DATA_DIR` or call `tugaphone::set_data_dir()` before the first call. The tugalex lexicon has its own data directory and its own variable, `TUGALEX_DATA_DIR`.
+The library reads its data at run time. `cmake --install` puts the files in `<prefix>/share/tugaphone`, and the library looks there by default. To use another directory, set the environment variable `TUGAPHONE_DATA_DIR` or call `tugaphone::set_data_dir()` before the first call. The tugalex lexicon has its own data directory and its own variable, `TUGALEX_DATA_DIR`. The bifonia homograph tables have `BIFONIA_DATA_DIR`. The tests set all three to the copies in the source trees.
+
+The engine writes one lexicon file for each lect to a cache directory, as the Python package does. The directory is `TUGAPHONE_LEXICON_DIR` when it is set, else `$XDG_CACHE_HOME/tugaphone/lexicon`, else `~/.cache/tugaphone/lexicon`. If the library cannot make or write this directory, the call fails with the `OSError` that Python raises in the same case, for example `PermissionError`.
 
 The orthography2ipa data has its own variable, `ORTHOGRAPHY2IPA_DATA_DIR`, and its own call, `orthography2ipa::set_data_directory()`. The registry gets its list of lects from this data. If the directory is missing, the library does not stop: `list_dialects()` returns an empty list, and each code resolves to the default lect "pt-PT". The Python package does the same when its orthography2ipa data is missing. If `list_dialects()` is empty, check `ORTHOGRAPHY2IPA_DATA_DIR`.
 
