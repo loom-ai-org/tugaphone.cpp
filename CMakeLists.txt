@@ -84,6 +84,7 @@ add_library(tugaphone
     src/registry.cpp
     src/dialects.cpp
     src/unicode_norm.cpp
+    src/o2i_registry.cpp
     src/pyre.cpp
     src/markov.cpp
     src/langdetect.cpp
@@ -167,17 +168,40 @@ if(TUGAPHONE_BUILD_TESTS)
     target_include_directories(tugaphone_parity PRIVATE src)
     find_package(Threads REQUIRED)
     target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB Threads::Threads)
-    add_test(NAME parity COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
-             --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv)
-    set_tests_properties(parity PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+    # One parity test per module, so that ctest -j runs the modules in parallel
+    # and the timeout applies to each module. The engine writes the tugalex
+    # lexicon TSVs to its cache, one cache per test.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS tests/parity/modules.hpp)
+    file(READ ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/modules.hpp _parity_header)
+    string(REGEX MATCHALL "X\\([a-z_]+\\)" _parity_modules "${_parity_header}")
+    list(TRANSFORM _parity_modules REPLACE "X\\(([a-z_]+)\\)" "\\1")
+    # The engine goldens take more than an hour under the sanitizers, so a
+    # sanitizer build can check every n-th engine record.
+    set(TUGAPHONE_LATTICE_CORE_STRIDE 1 CACHE STRING "Check every n-th lattice_core golden record")
+    foreach(_module IN LISTS _parity_modules)
+        set(_stride 1)
+        if(_module STREQUAL "lattice_core")
+            set(_stride ${TUGAPHONE_LATTICE_CORE_STRIDE})
+        endif()
+        add_test(NAME parity_${_module} COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
+                 --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv
+                 --stride ${_stride} ${_module})
+        set_tests_properties(parity_${_module} PROPERTIES ENVIRONMENT
+            "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-${_module}")
+    endforeach()
     # The accent records include 100,000 code-point subjects for the regular
     # expression engine; a 512 KB thread stack shows that it does not recurse
     # per character.
     add_test(NAME parity_small_stack COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
              --stack-kb 512 accent)
-    set_tests_properties(parity_small_stack PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
-    # The engine writes the tugalex lexicon TSVs to its cache.
-    set_property(TEST parity parity_small_stack APPEND PROPERTY ENVIRONMENT "TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache")
+    set_tests_properties(parity_small_stack PROPERTIES ENVIRONMENT
+        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-small-stack")
+
+    add_executable(tugaphone_threads_lattice_core tests/threads_lattice_core.cpp)
+    target_link_libraries(tugaphone_threads_lattice_core PRIVATE tugaphone Threads::Threads)
+    add_test(NAME threads_lattice_core COMMAND tugaphone_threads_lattice_core)
+    set_tests_properties(threads_lattice_core PROPERTIES ENVIRONMENT
+        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-threads")
 
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)

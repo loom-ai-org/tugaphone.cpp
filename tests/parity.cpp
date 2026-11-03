@@ -23,7 +23,7 @@
 namespace {
 
 struct Tally {
-    long expected = 0, checked = 0, mismatches = 0, divergences = 0, stale = 0;
+    long expected = 0, read = 0, checked = 0, mismatches = 0, divergences = 0, stale = 0;
 };
 
 // (module, golden line) -> the fix the record waits on.
@@ -48,7 +48,7 @@ Divergences read_divergences(const std::string& path) {
 }
 
 Tally run(const std::string& dir, const std::string& module, std::string (*record)(const json_line::Value&),
-          const Divergences& divergences, long shown) {
+          const Divergences& divergences, long shown, long stride) {
     const std::string path = dir + "/" + module + ".jsonl.gz";
     const auto lines = json_line::read_gz_lines(path);
     Tally t;
@@ -57,6 +57,11 @@ Tally run(const std::string& dir, const std::string& module, std::string (*recor
     std::map<std::string, long> by_function;
     std::set<std::string> seen;
     for (size_t i = 1; i < lines.size(); ++i) {
+        ++t.read;
+        if (static_cast<long>(i - 1) % stride != 0) {
+            seen.insert(lines[i]);
+            continue;
+        }
         std::string got;
         json_line::Value v;
         try {
@@ -112,6 +117,7 @@ struct Options {
     std::vector<std::string> modules;  // empty: every module
     Divergences divergences;
     long shown = 10;  // mismatches printed per module
+    long stride = 1;  // check every stride-th record
 };
 
 int run_all(const Options& opt) {
@@ -126,8 +132,9 @@ int run_all(const Options& opt) {
     Tally total;
 #define TUGAPHONE_PARITY_RUN(name)                                                  \
     if (selected(#name)) {                                                          \
-        const Tally t = run(opt.dir, #name, parity::record_##name, opt.divergences, opt.shown); \
+        const Tally t = run(opt.dir, #name, parity::record_##name, opt.divergences, opt.shown, opt.stride); \
         total.expected += t.expected;                                               \
+        total.read += t.read;                                                       \
         total.checked += t.checked;                                                 \
         total.mismatches += t.mismatches;                                           \
         total.divergences += t.divergences;                                         \
@@ -137,7 +144,7 @@ int run_all(const Options& opt) {
 #undef TUGAPHONE_PARITY_RUN
     std::cout << "goldens: " << total.expected << " in, " << total.checked << " checked, " << total.mismatches
               << " mismatches, " << total.divergences << " expected divergences, " << total.stale << " stale entries\n";
-    return (total.checked == total.expected && total.mismatches == 0 && total.stale == 0) ? 0 : 1;
+    return (total.read == total.expected && total.mismatches == 0 && total.stale == 0) ? 0 : 1;
 }
 
 int run_guarded(const Options& opt) {
@@ -151,10 +158,13 @@ int run_guarded(const Options& opt) {
 
 }  // namespace
 
-// usage: tugaphone_parity <goldens dir> [--divergences <file>] [--stack-kb <n>] [--show <n>] [module ...]
+// usage: tugaphone_parity <goldens dir> [--divergences <file>] [--stack-kb <n>] [--show <n>] [--stride <n>]
+//                          [module ...]
 // --stack-kb runs the records on a thread with that stack size, to show that
 // the matchers do not need a stack that grows with the subject. --show sets
-// how many mismatches each module prints (10 by default).
+// how many mismatches each module prints (10 by default). --stride <n> checks
+// only every n-th record, for the slow sanitizer builds; a listed divergence of
+// a record that is not checked is neither counted nor stale.
 int main(int argc, char** argv) {
     Options opt;
     size_t stack_kb = 0;
@@ -162,10 +172,11 @@ int main(int argc, char** argv) {
     try {
         for (int i = 1; i < argc; ++i) {
             const std::string a = argv[i];
-            if ((a == "--divergences" || a == "--stack-kb" || a == "--show") && i + 1 < argc) {
+            if ((a == "--divergences" || a == "--stack-kb" || a == "--show" || a == "--stride") && i + 1 < argc) {
                 if (a == "--divergences") opt.divergences = read_divergences(argv[++i]);
                 else if (a == "--stack-kb") stack_kb = std::stoul(argv[++i]);
-                else opt.shown = std::stol(argv[++i]);
+                else if (a == "--show") opt.shown = std::stol(argv[++i]);
+                else opt.stride = std::max(1L, std::stol(argv[++i]));
             } else {
                 rest.push_back(a);
             }
@@ -176,7 +187,7 @@ int main(int argc, char** argv) {
     }
     if (rest.empty()) {
         std::cerr << "usage: tugaphone_parity <goldens dir> [--divergences <file>] [--stack-kb <n>] [--show <n>] "
-                     "[module ...]\n";
+                     "[--stride <n>] [module ...]\n";
         return 2;
     }
     opt.dir = rest[0];
