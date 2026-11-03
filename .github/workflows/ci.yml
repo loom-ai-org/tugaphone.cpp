@@ -29,7 +29,7 @@ jobs:
       - name: Build
         run: cmake --build build -j
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure -j 4
       - name: Install and build a consumer
         run: |
           cmake --install build
@@ -51,7 +51,7 @@ jobs:
             -DCMAKE_CXX_FLAGS="-O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
           cmake --build build -j
       - name: Test
-        run: ctest --test-dir build --output-on-failure --timeout 1800
+        run: ctest --test-dir build --output-on-failure --timeout 1800 -j 4
 
   thread-sanitizer:
     runs-on: ubuntu-latest

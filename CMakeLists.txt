@@ -168,9 +168,17 @@ if(TUGAPHONE_BUILD_TESTS)
     target_include_directories(tugaphone_parity PRIVATE src)
     find_package(Threads REQUIRED)
     target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB Threads::Threads)
-    add_test(NAME parity COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
-             --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv)
-    set_tests_properties(parity PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+    # One parity test per module, so that ctest -j runs the modules in parallel
+    # and the timeout applies to each module.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS tests/parity/modules.hpp)
+    file(READ ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/modules.hpp _parity_header)
+    string(REGEX MATCHALL "X\\([a-z_]+\\)" _parity_modules "${_parity_header}")
+    list(TRANSFORM _parity_modules REPLACE "X\\(([a-z_]+)\\)" "\\1")
+    foreach(_module IN LISTS _parity_modules)
+        add_test(NAME parity_${_module} COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
+                 --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv ${_module})
+        set_tests_properties(parity_${_module} PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+    endforeach()
     # The accent records include 100,000 code-point subjects for the regular
     # expression engine; a 512 KB thread stack shows that it does not recurse
     # per character.
@@ -178,7 +186,6 @@ if(TUGAPHONE_BUILD_TESTS)
              --stack-kb 512 accent)
     set_tests_properties(parity_small_stack PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
-    find_package(Threads REQUIRED)
     add_executable(tugaphone_threads_tokenizer tests/threads_tokenizer.cpp)
     target_link_libraries(tugaphone_threads_tokenizer PRIVATE tugaphone Threads::Threads)
     add_test(NAME threads_tokenizer COMMAND tugaphone_threads_tokenizer)
