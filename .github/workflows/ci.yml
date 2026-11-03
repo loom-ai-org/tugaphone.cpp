@@ -64,9 +64,9 @@ jobs:
       # ThreadSanitizer cannot map its shadow memory with the runner's default ASLR entropy.
       - name: Lower the ASLR entropy
         run: sudo sysctl vm.mmap_rnd_bits=28
-      - name: Build the thread tests with TSan
+      - name: Build with TSan
         run: |
           CXX=clang++ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-O1 -g -fsanitize=thread"
-          cmake --build build -j --target tugaphone_threads_tokenizer
+          cmake --build build -j
       - name: Test
         run: ctest --test-dir build --output-on-failure -R '^threads_'
