@@ -14,7 +14,8 @@ int main(int argc, char** argv) {
     const std::string path = argc > 0 ? argv[0] : "tugaphone_benchmark";
     const std::string prog = path.substr(path.rfind('/') == std::string::npos ? 0 : path.rfind('/') + 1);
     const char* root = std::getenv("TUGAPHONE_BENCHMARK_ROOT");
-    const int status = tugaphone::benchmark::main(prog, std::vector<std::string>(argv + 1, argv + argc),
-                                                  root != nullptr && *root != '\0' ? root : ".", std::cout, std::cerr);
-    return tugaphone::detail::pyio::finish_stdout(status);
+    const std::vector<std::string> args(argv + 1, argv + argc);
+    return tugaphone::detail::pyio::run_main([&] {
+        return tugaphone::benchmark::main(prog, args, root != nullptr && *root != '\0' ? root : ".", std::cout, std::cerr);
+    });
 }

@@ -4,7 +4,9 @@
 // uncaught exception prints.
 #pragma once
 
+#include <functional>
 #include <ostream>
+#include <streambuf>
 #include <string>
 #include <string_view>
 
@@ -72,14 +74,46 @@ std::string backslashreplace(U32View text);
 std::string qualified_name(const std::string& python_type);
 
 // The end of an uncaught exception, called from inside a catch block:
-// flushes `out`, writes "<class>: <message>" for the exception in flight to
-// `err` as the last line of a Python traceback reads, and returns 1. It knows
-// the exceptions of tugaphone and of the libraries it calls.
-int print_exception(std::ostream& out, std::ostream& err);
+// writes "<class>: <message>" for the exception in flight to `err` as the
+// last line of a Python traceback reads, and returns 1. It knows the
+// exceptions of tugaphone and of the libraries it calls.
+int print_exception(std::ostream& err);
 
-// The end of the interpreter: flushes stdout. When the flush fails, Python
-// writes "Exception ignored in: <stdout>" and the OSError to stderr and exits
-// with 120; this returns 120 then, and `status` otherwise.
-int finish_stdout(int status);
+// sys.stdout of CPython on a file descriptor: a TextIOWrapper that keeps up
+// to 8192 bytes pending, over a BufferedWriter with the st_blksize of the
+// descriptor as its buffer, and a flush at each line on a terminal. Each
+// xsputn() is one write() call of Python. A write that reaches the
+// descriptor and fails throws the OSError of its errno, as print() raises
+// it. The error leaves operator<< only when the stream has badbit in
+// exceptions().
+class Stdout : public std::streambuf {
+public:
+    explicit Stdout(int fd);
+    // TextIOWrapper.flush().
+    void flush();
+
+protected:
+    std::streamsize xsputn(const char* s, std::streamsize n) override;
+    int_type overflow(int_type c) override;
+
+private:
+    void write_flush();
+    void buffer_write(const std::string& bytes);
+    void buffer_flush();
+    size_t raw_write(const char* data, size_t size);
+
+    int fd_;
+    bool line_buffering_;
+    size_t buffer_size_;
+    std::string pending_;
+    std::string buffer_;
+};
+
+// The interpreter around __main__: runs `body` with std::cout writing to
+// descriptor 1 through Stdout, then flushes it. When that flush fails,
+// Python writes "Exception ignored in: <stdout>" and the OSError to stderr
+// and exits with 120; this returns 120 then, and the status of `body`
+// otherwise.
+int run_main(const std::function<int()>& body);
 
 }  // namespace tugaphone::detail::pyio

@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <iostream>
 #include <new>
 #include <stdexcept>
 #include <tuple>
@@ -309,8 +310,7 @@ std::string qualified_name(const std::string& python_type) {
     return python_type;
 }
 
-int print_exception(std::ostream& out, std::ostream& err) {
-    out.flush();
+int print_exception(std::ostream& err) {
     std::string type, message;
     try {
         throw;
@@ -364,15 +364,93 @@ int print_exception(std::ostream& out, std::ostream& err) {
     return 1;
 }
 
-int finish_stdout(int status) {
-    errno = 0;
-    const bool flushed = std::fflush(stdout) == 0;
-    const int code = !flushed ? errno : EIO;  // EIO: a write failed before, its errno is gone
-    if (flushed && !std::ferror(stdout)) return status;
-    std::fprintf(stderr, "Exception ignored in: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>\n%s: %s\n",
-                 os_error_class(code).c_str(), os_error_message(code).c_str());
-    std::fflush(stderr);
-    return 120;
+Stdout::Stdout(int fd) : fd_(fd), line_buffering_(isatty(fd) == 1), buffer_size_(8192) {
+    struct stat st {};
+    if (fstat(fd, &st) == 0 && st.st_blksize > 1) buffer_size_ = static_cast<size_t>(st.st_blksize);
+}
+
+std::streamsize Stdout::xsputn(const char* s, std::streamsize n) {
+    constexpr size_t chunk_size = 8192;
+    const std::string_view text(s, static_cast<size_t>(n));
+    if (pending_.size() + text.size() > chunk_size) write_flush();
+    pending_ += text;
+    const bool needflush = line_buffering_ && text.find_first_of("\n\r") != std::string_view::npos;
+    if (pending_.size() >= chunk_size || needflush) write_flush();
+    if (needflush) buffer_flush();
+    return n;
+}
+
+Stdout::int_type Stdout::overflow(int_type c) {
+    if (traits_type::eq_int_type(c, traits_type::eof())) return traits_type::not_eof(c);
+    const char ch = traits_type::to_char_type(c);
+    xsputn(&ch, 1);
+    return c;
+}
+
+void Stdout::flush() {
+    write_flush();
+    buffer_flush();
+}
+
+// The pending bytes leave the TextIOWrapper before the buffer takes them, so
+// a failed write drops them.
+void Stdout::write_flush() {
+    std::string bytes;
+    bytes.swap(pending_);
+    if (!bytes.empty()) buffer_write(bytes);
+}
+
+void Stdout::buffer_write(const std::string& bytes) {
+    if (bytes.size() <= buffer_size_ - buffer_.size()) {
+        buffer_ += bytes;
+        return;
+    }
+    buffer_flush();
+    size_t written = 0;
+    while (bytes.size() - written > buffer_size_) written += raw_write(bytes.data() + written, bytes.size() - written);
+    buffer_.assign(bytes, written);
+}
+
+// A failed write keeps the bytes that did not reach the descriptor.
+void Stdout::buffer_flush() {
+    size_t written = 0;
+    try {
+        while (written < buffer_.size()) written += raw_write(buffer_.data() + written, buffer_.size() - written);
+    } catch (...) {
+        buffer_.erase(0, written);
+        throw;
+    }
+    buffer_.clear();
+}
+
+size_t Stdout::raw_write(const char* data, size_t size) {
+    while (true) {
+        const ssize_t n = ::write(fd_, data, size);
+        if (n >= 0) return static_cast<size_t>(n);
+        if (errno != EINTR) raise_os_error(errno);
+    }
+}
+
+int run_main(const std::function<int()>& body) {
+    Stdout stdout_buf(STDOUT_FILENO);
+    std::streambuf* const previous = std::cout.rdbuf(&stdout_buf);
+    std::cout.exceptions(std::ios::badbit);
+    // Python's stderr does not flush stdout, and a flush of a failed stdout
+    // would throw.
+    std::ostream* const tie = std::cerr.tie(nullptr);
+    int status = body();
+    try {
+        stdout_buf.flush();
+    } catch (const Error& e) {
+        std::cerr << "Exception ignored in: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>\n"
+                  << e.python_type() << ": " << e.what() << "\n";
+        std::cerr.flush();
+        status = 120;
+    }
+    std::cerr.tie(tie);
+    std::cout.exceptions(std::ios::goodbit);
+    std::cout.rdbuf(previous);
+    return status;
 }
 
 }  // namespace tugaphone::detail::pyio

@@ -625,7 +625,7 @@ int main(const std::string& prog, const std::vector<std::string>& args, const st
     } catch (const ap::Exit& e) {
         return e.status;
     } catch (...) {
-        return pyio::print_exception(out, err);
+        return pyio::print_exception(err);
     }
 }
 

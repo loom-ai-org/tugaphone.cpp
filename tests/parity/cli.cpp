@@ -78,8 +78,8 @@ std::string last_line(const std::function<void()>& fn) {
     try {
         fn();
     } catch (...) {
-        std::ostringstream out, err;
-        tugaphone::detail::pyio::print_exception(out, err);
+        std::ostringstream err;
+        tugaphone::detail::pyio::print_exception(err);
         std::string line = err.str();
         if (!line.empty() && line.back() == '\n') line.pop_back();
         return line;

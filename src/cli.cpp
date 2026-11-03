@@ -97,7 +97,7 @@ int main(const std::vector<std::string>& args, std::ostream& out, std::ostream& 
     } catch (const ap::Exit& e) {
         return e.status;
     } catch (...) {
-        return detail::pyio::print_exception(out, err);
+        return detail::pyio::print_exception(err);
     }
 }
 
