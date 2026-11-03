@@ -158,6 +158,48 @@ std::string char_token(const Value& v) {
            }) + "]";
 }
 
+std::string char_to_syllable_map(const Value& v) {
+    return head(v) + guard_all([&] {
+               std::vector<std::string> pairs;
+               for (const auto& [pos, syl] : tk::WordToken::build_char_to_syllable_map(v[1].strings())) {
+                   pairs.push_back(list({J(pos), J(syl)}));
+               }
+               return list(pairs);
+           }) + "]";
+}
+
+std::string parent_sentence(const Value& v) {
+    return head(v) + guard_all([&] {
+               tk::Sentence s(v[2].str, dialect(v[1].str));
+               std::vector<std::string> words;
+               for (const auto& w : s.words()) {
+                   std::vector<std::string> graphemes;
+                   for (const auto& g : w->graphemes()) {
+                       std::vector<bool> chars;
+                       for (const auto& c : g->characters()) chars.push_back(c->parent_sentence() == &s);
+                       graphemes.push_back(list({J(g->parent_sentence() == &s), J(chars)}));
+                   }
+                   words.push_back(list(graphemes));
+               }
+               return list(words);
+           }) + "]";
+}
+
+std::string orphan_parent_sentence(const Value& v) {
+    return head(v) + guard_all([&] {
+               tk::WordToken w(v[1].str, 0, v[2].strings(), nullptr, dialect("EuropeanPortuguese"));
+               tk::GraphemeToken g("a", 0, 0);
+               tk::CharToken c("a", 0, &g);
+               std::vector<bool> graphemes, chars;
+               for (const auto& x : w.graphemes()) {
+                   graphemes.push_back(x->parent_sentence() == nullptr);
+                   for (const auto& y : x->characters()) chars.push_back(y->parent_sentence() == nullptr);
+               }
+               return list({J(w.parent_sentence() == nullptr), J(graphemes), J(chars),
+                            J(g.parent_sentence() == nullptr), J(c.parent_sentence() == nullptr)});
+           }) + "]";
+}
+
 }  // namespace
 
 std::string record_tokenizer(const Value& v) {
@@ -167,6 +209,9 @@ std::string record_tokenizer(const Value& v) {
     if (fn == "manual") return manual(v);
     if (fn == "grapheme") return grapheme(v);
     if (fn == "char") return char_token(v);
+    if (fn == "char_to_syllable_map") return char_to_syllable_map(v);
+    if (fn == "parent_sentence") return parent_sentence(v);
+    if (fn == "orphan_parent_sentence") return orphan_parent_sentence(v);
     if (fn == "PRONOUNCED_QU_GU_U") return "[" + J(fn) + "," + J(tk::PRONOUNCED_QU_GU_U()) + "]";
     if (fn == "pronounces_qu_gu_u") return head(v) + guard_all([&] { return J(tk::pronounces_qu_gu_u(v[1].str)); }) + "]";
     if (fn == "is_grapheme_silent") {

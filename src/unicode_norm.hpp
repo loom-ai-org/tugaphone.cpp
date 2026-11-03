@@ -5,12 +5,14 @@
 #include <vector>
 
 #include "detail.hpp"
-#include "nfd.hpp"
 
 namespace tugaphone::detail {
 
-// unicodedata.normalize("NFC", s). nfd and combining are in nfd.hpp.
+// unicodedata.normalize("NFD", s) and unicodedata.normalize("NFC", s).
+U32 nfd(U32View s);
 U32 nfc(U32View s);
+// unicodedata.combining(c): the canonical combining class.
+int combining(char32_t c);
 
 // The case rules re uses for IGNORECASE in Unicode mode.
 char32_t sre_lower(char32_t c);   // _sre.unicode_tolower

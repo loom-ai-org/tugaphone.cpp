@@ -154,7 +154,7 @@ The port keeps these defects of the reference release, because it is held at byt
 - A `word` transform puts `\b` on each side of the pattern. A pattern that starts or ends with punctuation thus never matches between spaces.
 - `AccentOverlay.from_dict` writes any name with `str()`: a null name becomes "None".
 - The tokenizer gives a grapheme and a character an `idx_in_sentence` of `-1 + idx_in_word`. The value does not add the offset of the word in the sentence.
-- `is_grapheme_silent` compares the whole word prefix with `"m"` and tests `after[0] in "cç"` for the archaic silent p. The rule never fires: `assumpção` keeps its p, and the `mpt` words can never match.
+- `is_grapheme_silent` compares the prefix with `"m"` and tests `after[0] in "cç"` for the archaic silent p. A direct call with the prefix `"m"` returns true. `CharToken.is_silent` gives the whole word prefix, so the rule never fires for a character of a word: `assumpção` keeps its p. The `mpt` words never match, because t is not in `"cç"`.
 
 ## API inventory
 
@@ -167,10 +167,10 @@ The status names the phase of the port that adds the name. Each name in the tabl
 <!-- inventory:__init__ -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
-| `TugaPhonemizer` | class | none yet | later phase |
-| `TugaPhonemizer.phonemize_sentence` | method | none yet | later phase |
-| `TugaPhonemizer.force_accent` | method | none yet | later phase |
-| `TugaPhonemizer.is_supported` | method | none yet | later phase |
+| `TugaPhonemizer` | class | `tugaphone::TugaPhonemizer` | phase 4 |
+| `TugaPhonemizer.phonemize_sentence` | method | `tugaphone::TugaPhonemizer::phonemize_sentence` | phase 4 |
+| `TugaPhonemizer.force_accent` | method | `tugaphone::TugaPhonemizer::force_accent` | phase 4 |
+| `TugaPhonemizer.is_supported` | method | `tugaphone::TugaPhonemizer::is_supported` | phase 4 |
 <!-- /inventory:__init__ -->
 
 ### tugaphone.registry
@@ -338,7 +338,7 @@ The status names the phase of the port that adds the name. Each name in the tabl
 
 A Sentence owns its WordTokens, a WordToken owns its GraphemeTokens, and a GraphemeToken owns its CharTokens. Each token keeps a pointer to its parent, so a token cannot be copied or moved. A Python `cached_property` is computed on first use and then kept. The dialect of a token is a `std::shared_ptr<const DialectInventory>`, and a null pointer stands for a new `EuropeanPortuguese()`.
 
-The constructors take the Python arguments, except `graphemes=` of WordToken and `characters=` of GraphemeToken. In C++ a parent always builds its children, because each child must point at its parent. `features` returns the dict as an ordered list of key and value pairs, and `features_json()` writes it as `json.dumps` does. `unicodedata.normalize("NFD")` and `unicodedata.combining` come from tables that `tools/gen_unicode_nfd.py` generates from the reference interpreter.
+The constructors take the Python arguments, except `graphemes=` of WordToken and `characters=` of GraphemeToken. In C++ a parent always builds its children, because each child must point at its parent. `features` returns the dict as an ordered list of key and value pairs, and `features_json()` writes it as `json.dumps` does. `unicodedata.normalize("NFD")` and `unicodedata.combining` come from `src/unicode_norm.hpp`, the tables that the language detector also uses.
 
 The goldens use 13 dialects: the five national classes, the three city classes, the base `DialectInventory`, and four dialect codes given to a national class. Two of the codes are regional, and no class knows the other two. A record holds the IPA and the features of the sentence. In the five national classes it also holds every property of every word, grapheme and character token. A sentence of up to 12 characters has the full text of these properties, and a longer one has a CRC-32 and a length.
 
@@ -347,11 +347,16 @@ The goldens use 13 dialects: the five national classes, the three city classes, 
 | Module functions and constants | 1,806 |
 | Test strings, token properties, national classes | 7,400 |
 | Test strings, IPA, the other eight dialects | 11,840 |
-| Gold-TSV words, IPA, 13 dialects | 59,033 |
+| The 4,541 unique words of the 10,093 gold-TSV rows, IPA, 13 dialects | 59,033 |
 | Every 20th gold-TSV word, token properties, national classes | 1,140 |
 | Unicode probes | 228 |
 | Seeded fuzz | 1,500 |
-| Tokens built directly, and words with diaeresis vowels | 212 |
+| Tokens built directly, parent links, diaeresis vowels and rare graphemes | 308 |
+| Total | 83,255 |
+
+The rare graphemes are the tetragraphs of "Uruguai" and "quais", the triphthong of "saguão", the final o after a silent h in "Soho", and the atonic "pra". Only caller syllables, such as `["assu", "mpção"]`, put an archaic `mpç` or `mpt` grapheme in a word, so the goldens build these words with their syllables.
+
+orthography2ipa.cpp keeps its spec cache in a global map with no lock. The tokenizer holds `detail::o2i_registry_mutex()` while it loads a spec, so threads can build sentences of different dialect codes at the same time. The test `threads_tokenizer` builds eight sentences in eight threads, and CI runs it under ThreadSanitizer.
 
 <!-- inventory:tokenizer -->
 | Python name | Kind | C++ name | Status |
@@ -577,16 +582,16 @@ The OVOS plugin registration is not applicable. A Python package registers a plu
 <!-- inventory:plugin -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
-| `TugaphoneG2PPlugin` | class | none yet | later phase |
-| `TugaphoneG2PPlugin.lang` | attribute | none yet | later phase |
-| `TugaphoneG2PPlugin.contact` | attribute | none yet | later phase |
-| `TugaphoneG2PPlugin.language_codes` | method | none yet | later phase |
-| `TugaphoneG2PPlugin.transcribe` | method | none yet | later phase |
-| `TugaphoneG2PPlugin.transcribe_word` | method | none yet | later phase |
-| `TugaphoneG2PPlugin.force_accent` | method | none yet | later phase |
-| `SilabificadorSyllabifier` | class | none yet | later phase |
-| `SilabificadorSyllabifier.language_codes` | method | none yet | later phase |
-| `SilabificadorSyllabifier.syllabify` | method | none yet | later phase |
+| `TugaphoneG2PPlugin` | class | `tugaphone::plugin::TugaphoneG2PPlugin` | phase 4 |
+| `TugaphoneG2PPlugin.lang` | attribute | `tugaphone::plugin::TugaphoneG2PPlugin::lang` | phase 4 |
+| `TugaphoneG2PPlugin.contact` | attribute | `tugaphone::plugin::TugaphoneG2PPlugin::contact` | phase 4 |
+| `TugaphoneG2PPlugin.language_codes` | method | `tugaphone::plugin::TugaphoneG2PPlugin::language_codes` | phase 4 |
+| `TugaphoneG2PPlugin.transcribe` | method | `tugaphone::plugin::TugaphoneG2PPlugin::transcribe` | phase 4 |
+| `TugaphoneG2PPlugin.transcribe_word` | method | `tugaphone::plugin::TugaphoneG2PPlugin::transcribe_word` | phase 4 |
+| `TugaphoneG2PPlugin.force_accent` | method | `tugaphone::plugin::TugaphoneG2PPlugin::force_accent` | phase 4 |
+| `SilabificadorSyllabifier` | class | `tugaphone::plugin::SilabificadorSyllabifier` | phase 4 |
+| `SilabificadorSyllabifier.language_codes` | method | `tugaphone::plugin::SilabificadorSyllabifier::language_codes` | phase 4 |
+| `SilabificadorSyllabifier.syllabify` | method | `tugaphone::plugin::SilabificadorSyllabifier::syllabify` | phase 4 |
 <!-- /inventory:plugin -->
 
 ### Command line
@@ -596,11 +601,11 @@ The C++ executable `tugaphone` is the console script of the Python package, `pyt
 <!-- inventory:cli -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
-| `tugaphone phonemize` | command | none yet | later phase |
-| `tugaphone force-accent` | command | none yet | later phase |
-| `tugaphone list` | command | none yet | later phase |
-| `--lect` | flag | none yet | later phase |
-| `--mode` | flag | none yet | later phase |
-| `--base` | flag | none yet | later phase |
-| `--overlay` | flag | none yet | later phase |
+| `tugaphone phonemize` | command | `tugaphone phonemize` | phase 4 |
+| `tugaphone force-accent` | command | `tugaphone force-accent` | phase 4 |
+| `tugaphone list` | command | `tugaphone list` | phase 4 |
+| `--lect` | flag | `tugaphone ... --lect` | phase 4 |
+| `--mode` | flag | `tugaphone ... --mode` | phase 4 |
+| `--base` | flag | `tugaphone ... --base` | phase 4 |
+| `--overlay` | flag | `tugaphone ... --overlay` | phase 4 |
 <!-- /inventory:cli -->
