@@ -1,0 +1,1 @@
+{"name":"t","transforms":[{"kind":"regex","pattern":"(v)i","replacement":"\\1\\1","stage":"text"}]}

@@ -52,8 +52,10 @@ std::string read_file(const std::filesystem::path& path) {
     return J(text.str());
 }
 
-// The class in an error line: "TypeError: ..." -> "TypeError".
-std::string exception_class(const std::string& text) { return text.substr(0, text.find(':')); }
+void replace_all(std::string& text, const std::string& from, const std::string& to) {
+    for (size_t at = text.find(from); at != std::string::npos; at = text.find(from, at + to.size()))
+        text.replace(at, from.size(), to);
+}
 
 std::string run_main(const Value& v) {
     std::string pattern = (std::filesystem::temp_directory_path() / "tugaphone-bench-XXXXXX").string();
@@ -61,6 +63,8 @@ std::string run_main(const Value& v) {
     const std::filesystem::path scratch = pattern;
     std::filesystem::create_directory_symlink(std::filesystem::path(root()) / "tests", scratch / "tests");
     std::filesystem::create_directory(scratch / "docs");
+    if (v.size() > 9 && v[9].members.size() == 1 && v[9].members[0].first == "benchmarks_file")
+        std::ofstream(scratch / "benchmarks").close();
     if (v[2].is_null())
         unsetenv("COLUMNS");
     else
@@ -71,12 +75,17 @@ std::string run_main(const Value& v) {
     const std::string results = read_file(scratch / "benchmarks" / "results.json");
     const std::string scoreboard = read_file(scratch / "docs" / "scoreboard.md");
     std::filesystem::remove_all(scratch);
+    // A traceback record holds the last line of the traceback, with the
+    // scratch root as "<root>".
     std::string error = err.str();
-    // A traceback names Python files; the C++ error line must name the same class.
-    const bool traceback = v[8].boolean;
-    if (traceback && exception_class(error) == v[4].str) error = v[4].str;
-    return list({J("main"), json_line::dump(v[1]), json_line::dump(v[2]), J(out.str()), J(error), J(status),
-                 results, scoreboard, json_line::dump(v[8])});
+    if (v[8].boolean) {
+        if (!error.empty() && error.back() == '\n') error.pop_back();
+        replace_all(error, scratch.string(), "<root>");
+    }
+    std::vector<std::string> parts = {J("main"), json_line::dump(v[1]), json_line::dump(v[2]), J(out.str()),
+                                      J(error), J(status), results, scoreboard, json_line::dump(v[8])};
+    if (v.size() > 9) parts.push_back(json_line::dump(v[9]));
+    return list(parts);
 }
 
 }  // namespace

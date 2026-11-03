@@ -9,9 +9,11 @@ A word record holds one fixture word with its rules-only transcription, its
 edit distance, its stress verdict and its confusion pairs. A main record runs
 main() with one argument list in a scratch repository root and holds standard
 output, standard error, the exit status and the two reports. When main()
-raises, Python prints a traceback that names its own files and local paths,
-so the record holds only the exception class and says so, as the
-command-line records do.
+raises, Python prints a traceback that names its own files, so the record
+holds the last line of the traceback and says so, as the command-line records
+do. The scratch root and this repository read as "<root>" in that line. An
+optional last item sets the scratch root up: {"benchmarks_file": true} puts a
+regular file where main() makes the benchmarks directory.
 """
 import contextlib
 import io
@@ -37,7 +39,10 @@ RUNS = [
     ["--limit", "abc"], ["--limit", ""], ["--limit", " 7 "], ["--limit", "1_0"], ["--limit", "+4"], ["--limit"],
     ["--dialect"], ["-h"], ["--help"], ["--he"], ["--x"], ["x"], ["--dia=pt-AO", "--lim=3"],
     ["--dialect=pt-MZ", "--dialect", "pt-AO", "--limit", "1"], ["--li", "2", "--di", "pt-BR"],
+    ["--dialect", "/dev/null", "--limit", "3"], ["--dialect", "../gold/pt-BR", "--limit", "2"],
 ]
+# Runs in a scratch root where "benchmarks" is a regular file.
+BENCHMARKS_FILE_RUNS = [[], ["--dialect", "pt-BR"]]
 COLUMNS = [None, "30", "200"]
 
 # Strings for the scoring helpers: stress marks, joiners, ties, syllabic and
@@ -129,13 +134,15 @@ def score_records(bench):
     return out
 
 
-def run_main(bench, args, columns):
+def run_main(bench, args, columns, options=None):
     with tempfile.TemporaryDirectory(prefix="tugaphone-bench-") as root:
         os.symlink(ROOT / "tests", os.path.join(root, "tests"))
         bench.FIXTURE_DIR = str(GOLD)
         bench.RESULTS_JSON = os.path.join(root, "benchmarks", "results.json")
         bench.SCOREBOARD_MD = os.path.join(root, "docs", "scoreboard.md")
         os.mkdir(os.path.join(root, "docs"))
+        if options and options.get("benchmarks_file"):
+            pathlib.Path(root, "benchmarks").write_text("", encoding="utf-8")
         saved_argv, saved_columns = sys.argv, os.environ.pop("COLUMNS", None)
         if columns is not None:
             os.environ["COLUMNS"] = columns
@@ -149,7 +156,8 @@ def run_main(bench, args, columns):
             status = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
         except Exception:  # the uncaught exception ends the process: status 1 and a traceback
             status, is_traceback = 1, True
-            err.write(traceback.format_exc().splitlines()[-1].split(":")[0])
+            line = traceback.format_exc().splitlines()[-1]
+            err.write(line.replace(root, "<root>").replace(str(ROOT), "<root>"))
         finally:
             sys.argv = saved_argv
             os.environ.pop("COLUMNS", None)
@@ -159,8 +167,9 @@ def run_main(bench, args, columns):
         def report(path):
             return pathlib.Path(path).read_text(encoding="utf-8") if os.path.exists(path) else None
 
-        return ["main", args, columns, out.getvalue(), err.getvalue(), status, report(bench.RESULTS_JSON),
-                report(bench.SCOREBOARD_MD), is_traceback]
+        record = ["main", args, columns, out.getvalue(), err.getvalue(), status, report(bench.RESULTS_JSON),
+                  report(bench.SCOREBOARD_MD), is_traceback]
+        return record + [options] if options else record
 
 
 def corpora(repo):
@@ -168,5 +177,6 @@ def corpora(repo):
     check_fixtures(repo, bench)
     out = [("probes", probe_records(bench)), ("words", word_records(bench)), ("score_dialect", score_records(bench))]
     out.append(("main", [run_main(bench, a, c) for a in RUNS for c in (COLUMNS if a[:1] in (["-h"], ["--help"])
-                                                                         else [None])]))
+                                                                         else [None])]
+                + [run_main(bench, a, None, {"benchmarks_file": True}) for a in BENCHMARKS_FILE_RUNS]))
     return out

@@ -266,6 +266,19 @@ if(TUGAPHONE_BUILD_TESTS)
     add_test(NAME threads_tokenizer COMMAND tugaphone_threads_tokenizer)
     set_tests_properties(threads_tokenizer PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
+    add_executable(tugaphone_threads_package tests/threads_package.cpp)
+    target_include_directories(tugaphone_threads_package PRIVATE src)
+    target_link_libraries(tugaphone_threads_package PRIVATE tugaphone Threads::Threads)
+    add_test(NAME threads_package COMMAND tugaphone_threads_package)
+    set_tests_properties(threads_package PROPERTIES ENVIRONMENT
+        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-threads-package")
+
+    add_test(NAME cli_process COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_process.sh
+             $<TARGET_FILE:tugaphone_cli> $<TARGET_FILE:tugaphone_benchmark> ${CMAKE_CURRENT_SOURCE_DIR}
+             ${CMAKE_CURRENT_BINARY_DIR}/cli-process)
+    set_tests_properties(cli_process PROPERTIES ENVIRONMENT
+        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-cli-process")
+
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)
     add_test(NAME examples COMMAND tugaphone_examples)
