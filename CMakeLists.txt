@@ -180,10 +180,12 @@ if(TUGAPHONE_BUILD_TESTS)
         set_tests_properties(parity_${_module} PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
     endforeach()
     # The accent records include 100,000 code-point subjects for the regular
-    # expression engine; a 512 KB thread stack shows that it does not recurse
-    # per character.
+    # expression engine; a 1 MB thread stack shows that it does not recurse
+    # per character. 1 MB is the stack that PARITY.md states for the engine:
+    # 495 nested possessive repeats need up to about 570 KB in a Debug or
+    # sanitizer build.
     add_test(NAME parity_small_stack COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
-             --stack-kb 512 accent)
+             --stack-kb 1024 accent)
     set_tests_properties(parity_small_stack PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     add_executable(tugaphone_threads_tokenizer tests/threads_tokenizer.cpp)
