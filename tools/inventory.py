@@ -8,8 +8,9 @@ in the module that defines it. The CLI flags and the data files are listed
 too.
 
 Each row maps the name to its C++ name and a status. A module listed in
-PORTED has the status "phase 1", and the script checks that each C++ name
-is declared under include/. Every other module has the status "later phase".
+PORTED has the status of the phase that ports it, and the script checks that
+each C++ name is declared under include/. Every other module has the status
+"later phase".
 
 PARITY.md holds one section per module. The script replaces the text
 between "<!-- inventory:<module> -->" and "<!-- /inventory:<module> -->" and
@@ -27,12 +28,14 @@ import tugaphone
 
 PKG = pathlib.Path(tugaphone.__file__).parent
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PORTED = {"registry", "dialects", "text_normalization", "number_utils", "version"}
+PORTED = {"registry": "phase 1", "dialects": "phase 1", "text_normalization": "phase 1", "number_utils": "phase 1",
+          "version": "phase 1", "tokenizer": "phase 2"}
 # Python names whose C++ form is not <namespace>::<name>.
 CPP_NAMES = {
     ("dialects", "LEXICON"): "tugaphone::dialects::LEXICON()",
     ("dialects", "AO1990"): "tugaphone::dialects::AO1990()",
     ("version", "__version__"): "tugaphone::version::version",
+    ("tokenizer", "PRONOUNCED_QU_GU_U"): "tugaphone::tokenizer::PRONOUNCED_QU_GU_U()",
 }
 CALLABLE_SETS = {"LABEL_HEADS", "PLURAL_FUNCTION_WORDS", "FEMININE_DETERMINERS", "MASCULINE_DETERMINERS",
                  "FUNCTION_WORDS", "RANGE_LINKS", "UNIT_NAMES"}
@@ -113,7 +116,7 @@ def module_table(module):
             cpp = cpp_name(module, name)
             if not declared(cpp):
                 raise SystemExit(f"{module}.{name}: {cpp} is not declared under include/")
-            status = "phase 1"
+            status = PORTED[module]
             cell = f"`{cpp}`"
         else:
             status, cell = "later phase", "none yet"

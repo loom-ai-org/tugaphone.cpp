@@ -80,6 +80,8 @@ add_library(tugaphone
     src/text_normalization.cpp
     src/registry.cpp
     src/dialects.cpp
+    src/nfd.cpp
+    src/tokenizer.cpp
 )
 add_library(tugaphone::tugaphone ALIAS tugaphone)
 target_include_directories(tugaphone
@@ -127,13 +129,15 @@ if(TUGAPHONE_BUILD_TESTS)
     enable_testing()
     find_package(ZLIB REQUIRED)
 
-    # The library and the tugalex lexicon read their data from the source trees.
+    # The library, the tugalex lexicon and the bifonia homographs read their
+    # data from the source trees.
     if(TUGAPHONE_USE_SYSTEM_DEPS)
         set(_tugaphone_test_env "TUGAPHONE_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/data")
     else()
         set(_tugaphone_test_env
             "TUGAPHONE_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/data"
-            "TUGALEX_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/tugalex.cpp/data")
+            "TUGALEX_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/tugalex.cpp/data"
+            "BIFONIA_DATA_DIR=${CMAKE_CURRENT_SOURCE_DIR}/third_party/bifonia.cpp/data")
     endif()
 
     add_executable(tugaphone_parity
@@ -142,6 +146,7 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/dialects.cpp
         tests/parity/text_normalization.cpp
         tests/parity/number_utils.cpp
+        tests/parity/tokenizer.cpp
     )
     target_include_directories(tugaphone_parity PRIVATE tests)
     target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB)

@@ -23,6 +23,7 @@ MODULES = [
     "dialects",
     "text_normalization",
     "number_utils",
+    "tokenizer",
 ]
 
 
