@@ -104,6 +104,30 @@ The matcher keeps its continuations, backtrack points and group mark changes on 
 
 The goldens hold the default rule matches over every gold word. They hold the respelling of every gold word for its own lect and for pt-PT-x-porto, and of the mixed sentences, with each dialect in turn. They also hold 240 regular expressions, valid and invalid, over Unicode subjects, with and without IGNORECASE. The corpus `nesting` holds groups, lookarounds, repeats and conditionals nested at depths on both sides of Python's recursion limit. The corpus `matcher_guards` holds repeats whose body can match the empty string and backreferences to empty groups. In these patterns, a conditional changes its branch once its group is set, so each guard of the matcher on empty iterations changes the result.
 
+### Speed and memory of the regular expression engine
+
+`tools/bench_regex.py` measures the engine against Python's `re`. Each case is one `re.sub(pattern, "X", subject, flags=re.I)` over a long subject. The script runs the case in a new Python process and through `tugaphone_parity` in a new C++ process, three times each. It shows the shortest wall time and the peak RSS of each process, and it checks that the C++ result is equal to Python's. The `baseline` row uses a pattern that never matches: it shows the cost of process start, data loading and golden parsing.
+
+```
+python -I tools/bench_regex.py build
+```
+
+The table comes from a Release build with gcc on x86-64. The machine ran other jobs, with a load of about 20 on 8 CPUs, so the times vary by about 30 % from run to run.
+
+| Case | Subject (code points) | Python s | C++ s | Python MB | C++ MB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `baseline` | 1,000,000 | 0.05 | 0.11 | 15 | 22 |
+| `a*` | 1,000,000 | 0.05 | 0.20 | 15 | 144 |
+| `\w+` | 1,000,000 | 0.04 | 0.28 | 15 | 146 |
+| `(a\|b)*` | 1,000,000 | 0.19 | 0.74 | 92 | 422 |
+| `(?:(a)\|b)*` | 1,000,000 | 0.21 | 0.69 | 158 | 369 |
+| `(?:(?=(a\|b))\1)*` | 1,000,000 | 0.17 | 0.74 | 92 | 374 |
+| `(?:a\|b)*+` | 1,000,000 | 0.05 | 0.18 | 15 | 15 |
+| `(?=(a\|b)*$)`, quadratic | 5,000 | 1.00 | 8.09 | 15 | 15 |
+| `(a+)+c`, exponential | 18 | 0.06 | 0.15 | 15 | 15 |
+
+Time and memory grow linearly with the subject in both engines, but the C++ engine is 2 to 8 times slower and uses up to 10 times more memory. The matcher keeps a backtrack point and a continuation frame on the heap for each iteration of a repeat. sre matches a repeat of one character in a single loop that keeps no state per iteration. A pattern that scans the rest of the subject from each position is quadratic in both engines. A pattern with nested repeats that cannot match is exponential in both engines. The user patterns of an accent overlay apply to one word or one sentence at a time, so these costs are small in normal use.
+
 ## Python defects kept for parity
 
 The port keeps these defects of the reference release, because it is held at byte parity:

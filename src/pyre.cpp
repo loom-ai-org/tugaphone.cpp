@@ -1497,8 +1497,10 @@ private:
                 bool matched = false;
                 if (!n.behind || pos >= n.width) {
                     const size_t from = n.behind ? pos - static_cast<size_t>(n.width) : pos;
+                    const size_t frames = frames_.size();
                     size_t ignored = 0;
                     matched = run(n.kids[0], from, push_frame({Frame::SubEnd}), ignored);
+                    frames_.resize(frames);  // no backtrack point refers to the frames of the sub-match
                 }
                 if (n.negative) {
                     undo(trail);
@@ -1507,8 +1509,11 @@ private:
                 return matched ? Mode::Return : Mode::Fail;
             }
             case MNode::Atomic: {
+                const size_t frames = frames_.size();
                 size_t end = 0;
-                if (!run(n.kids[0], pos, push_frame({Frame::SubEnd}), end)) return Mode::Fail;
+                const bool matched = run(n.kids[0], pos, push_frame({Frame::SubEnd}), end);
+                frames_.resize(frames);
+                if (!matched) return Mode::Fail;
                 pos = end;
                 return Mode::Return;
             }
@@ -1550,7 +1555,12 @@ private:
         const size_t before = trail_.size();
         const MSeq& body = n.kids[0];
         uint64_t count = 0;
-        auto once = [&](size_t from, size_t& to) { return run(body, from, push_frame({Frame::SubEnd}), to); };
+        auto once = [&](size_t from, size_t& to) {
+            const size_t frames = frames_.size();
+            const bool matched = run(body, from, push_frame({Frame::SubEnd}), to);
+            frames_.resize(frames);
+            return matched;
+        };
         while (count < n.min) {
             size_t to = 0;
             if (!once(pos, to)) {
