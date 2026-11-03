@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -17,6 +16,7 @@
 
 #include "detail.hpp"
 #include "o2i_registry.hpp"
+#include "pyio.hpp"
 #include "tugaphone/dialects.hpp"
 #include "tugaphone/number_utils.hpp"
 #include "tugaphone/registry.hpp"
@@ -84,13 +84,6 @@ private:
     std::string lect_;
 };
 
-void write_text(const std::string& path, const std::string& text) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) throw Error("OSError", "cannot write " + path);
-    out << text;
-    if (!out) throw Error("OSError", "cannot write " + path);
-}
-
 }  // namespace
 
 const std::vector<std::string>& VALID_CONTACT() {
@@ -142,24 +135,35 @@ void write_lexicon(std::string_view region, const std::string& path) {
     for (const auto& item : ipa_map) entries.push_back(&item);
     // sorted(ipa_map): UTF-8 byte order is code-point order.
     std::sort(entries.begin(), entries.end(), [](const auto* a, const auto* b) { return a->first < b->first; });
-    const fs::path target(path);
-    if (target.has_parent_path()) fs::create_directories(target.parent_path());
-    const std::string tmp = path + ".tmp";
+    // pathlib: path.parent.mkdir(parents=True, exist_ok=True), then a
+    // ".tsv.tmp" sibling replaced onto the path. Errors name pathlib's
+    // normalised paths.
+    const std::string target = detail::pyio::pure_path(path);
+    const size_t slash = target.rfind('/');
+    detail::pyio::mkdir_parents(slash == std::string::npos ? "." : slash == 0 ? "/" : target.substr(0, slash));
+    const std::string tmp = target + ".tmp";
     {
         std::string text;
         for (const auto* e : entries) text += e->first + "\t" + relayout(e->second) + "\n";
-        write_text(tmp, text);
+        detail::pyio::write_text(tmp, text);
     }
-    fs::rename(tmp, path);
-    write_text(stamp_path(path), tugalex_version());
+    detail::pyio::replace(tmp, target);
+    detail::pyio::write_text(stamp_path(target), tugalex_version());
 }
 
 bool is_stale(const std::string& path) {
+    const std::string target = detail::pyio::pure_path(path);
+    if (!detail::pyio::path_exists(target)) return true;
     std::error_code ec;
-    if (!fs::exists(path, ec) || fs::file_size(path, ec) == 0) return true;
-    std::ifstream in(stamp_path(path), std::ios::binary);
-    if (!in) return true;
-    const std::string stamp((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (fs::file_size(target, ec) == 0) return true;
+    std::string stamp;
+    try {
+        stamp = detail::pyio::read_text(stamp_path(target));
+    } catch (const Error& e) {
+        // except OSError: a stamp that cannot be read is stale.
+        if (e.python_type() == "UnicodeDecodeError") throw;
+        return true;
+    }
     return s8(detail::strip_ws(u(stamp))) != tugalex_version();
 }
 

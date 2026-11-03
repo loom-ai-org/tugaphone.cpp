@@ -168,8 +168,23 @@ bool truthy(const json::Value& v) {
     return false;
 }
 
+// type(v).__name__ of the Python value json.loads makes.
+const char* type_name(const json::Value& v) {
+    switch (v.kind) {
+        case json::Value::Null: return "NoneType";
+        case json::Value::Bool: return "bool";
+        case json::Value::Int: return "int";
+        case json::Value::Float: return "float";
+        case json::Value::String: return "str";
+        case json::Value::Array: return "list";
+        case json::Value::Object: return "dict";
+    }
+    return "object";
+}
+
 const json::Value& as_dict(const json::Value& d) {
-    if (d.kind != json::Value::Object) throw Error("AttributeError", "object has no attribute 'get'");
+    if (d.kind != json::Value::Object)
+        throw Error("AttributeError", std::string("'") + type_name(d) + "' object has no attribute 'get'");
     return d;
 }
 
@@ -208,7 +223,7 @@ AccentOverlay overlay_from(const json::Value& d) {
             if (!items->text.empty()) throw Error("AttributeError", "'str' object has no attribute 'get'");
             break;
         default:
-            throw TypeError("object is not iterable");
+            throw TypeError(std::string("'") + type_name(*items) + "' object is not iterable");
     }
     return o;
 }

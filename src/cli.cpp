@@ -62,9 +62,10 @@ std::unique_ptr<ap::Parser> build_parser() {
     return parser;
 }
 
+// The bytes of the argument, as os.fsencode gives them back.
 std::string value(const ap::Namespace& ns, const U32& dest) {
     const auto it = ns.find(dest);
-    return it != ns.end() && it->second ? detail::to_utf8(*it->second) : std::string();
+    return it != ns.end() && it->second ? detail::pyio::fsencode(*it->second) : std::string();
 }
 
 // _load_overlay(path): None for no path.
@@ -78,7 +79,7 @@ std::optional<accent::AccentOverlay> load_overlay(const std::string& path) {
 int main(const std::vector<std::string>& args, std::ostream& out, std::ostream& err) {
     const auto parser = build_parser();
     std::vector<U32> argv;
-    for (const std::string& a : args) argv.push_back(u(a));
+    for (const std::string& a : args) argv.push_back(detail::pyio::fsdecode(a));
     try {
         const ap::Namespace ns = parser->parse_args(argv, out, err);
         const std::string command = value(ns, U"command");
@@ -95,10 +96,8 @@ int main(const std::vector<std::string>& args, std::ostream& out, std::ostream& 
         return 0;
     } catch (const ap::Exit& e) {
         return e.status;
-    } catch (const Error& e) {
-        out.flush();
-        err << detail::pyio::qualified_name(e.python_type()) << ": " << e.what() << "\n";
-        return 1;
+    } catch (...) {
+        return detail::pyio::print_exception(out, err);
     }
 }
 

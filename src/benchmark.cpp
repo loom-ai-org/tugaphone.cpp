@@ -5,7 +5,6 @@
 #include <memory>
 #include <sstream>
 #include <climits>
-#include <filesystem>
 
 #include "argparse.hpp"
 #include "pyio.hpp"
@@ -580,19 +579,19 @@ int main(const std::string& prog, const std::vector<std::string>& args, const st
     parser.add_argument({U"--refresh-fixtures"}, std::move(refresh));
 
     std::vector<U32> argv;
-    for (const std::string& a : args) argv.push_back(u(a));
+    for (const std::string& a : args) argv.push_back(pyio::fsdecode(a));
     try {
         const ap::Namespace ns = parser.parse_args(argv, out, err);
         auto get = [&](const char32_t* key) -> std::optional<std::string> {
             const auto it = ns.find(key);
             if (it == ns.end() || !it->second) return std::nullopt;
-            return to_utf8(*it->second);
+            return pyio::fsencode(*it->second);
         };
         if (get(U"refresh_fixtures") == std::optional<std::string>("True")) {
             err << "--refresh-fixtures downloads the gold from the network; the C++ port does not do this\n";
             return 2;
         }
-        const std::string dir = root + "/tests/data/gold";
+        const std::string dir = pyio::path_join(root, "tests/data/gold");
         std::vector<std::string> dialects;
         const auto chosen = get(U"dialect");
         if (chosen && !chosen->empty()) {
@@ -611,24 +610,22 @@ int main(const std::string& prog, const std::vector<std::string>& args, const st
         }
         std::vector<Row> rows;
         for (const std::string& d : dialects) {
-            Row row = score_dialect(d, dir + "/" + d + ".tsv", cap);
+            Row row = score_dialect(d, pyio::path_join(dir, d + ".tsv"), cap);
             out << summary_line(row) << "\n";
             rows.push_back(std::move(row));
         }
         if (!(chosen && !chosen->empty()) && !cap) {
-            const std::string results_path = root + "/benchmarks/results.json";
-            const auto parent = std::filesystem::path(results_path).parent_path();
-            if (!parent.empty()) std::filesystem::create_directories(parent);
+            const std::string results_dir = pyio::path_join(root, "benchmarks");
+            const std::string results_path = pyio::path_join(results_dir, "results.json");
+            pyio::makedirs(results_dir);
             pyio::write_text(results_path, results_json(rows));
-            pyio::write_text(root + "/docs/scoreboard.md", scoreboard_md(rows));
+            pyio::write_text(pyio::path_join(root, "docs/scoreboard.md"), scoreboard_md(rows));
         }
         return 0;
     } catch (const ap::Exit& e) {
         return e.status;
-    } catch (const Error& e) {
-        out.flush();
-        err << pyio::qualified_name(e.python_type()) << ": " << e.what() << "\n";
-        return 1;
+    } catch (...) {
+        return pyio::print_exception(out, err);
     }
 }
 

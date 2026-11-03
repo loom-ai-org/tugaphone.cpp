@@ -3,11 +3,13 @@
 #include <algorithm>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <set>
 
 #include <sys/ioctl.h>
 #include <unistd.h>
 
+#include "pyio.hpp"
 #include "unicode_norm.hpp"
 
 namespace tugaphone::detail::argparse {
@@ -259,8 +261,10 @@ long terminal_columns() {
         if (const auto value = py_int(env)) {
             try {
                 columns = std::stol(value->str());
-            } catch (const std::exception&) {
-                columns = 0;
+            } catch (const std::out_of_range&) {
+                // A Python int has no range: a width this large never wraps,
+                // and a negative one is no width.
+                columns = value->str()[0] == '-' ? 0 : std::numeric_limits<long>::max() / 4;
             }
         }
     }
@@ -673,8 +677,9 @@ U32 Parser::format_help() const {
 }
 
 void Parser::error(const U32& message, std::ostream& err) const {
-    err << to_utf8(format_usage());
-    err << to_utf8(prog_ + U": error: " + message + U"\n");
+    // sys.stderr writes with errors="backslashreplace".
+    err << pyio::backslashreplace(format_usage());
+    err << pyio::backslashreplace(prog_ + U": error: " + message + U"\n");
     throw Exit{2};
 }
 
