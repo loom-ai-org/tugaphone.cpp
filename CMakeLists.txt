@@ -161,7 +161,8 @@ if(TUGAPHONE_BUILD_TESTS)
     # The phase-internal headers under src/ expose the private functions the goldens call.
     target_include_directories(tugaphone_parity PRIVATE src)
     target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB)
-    add_test(NAME parity COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens)
+    add_test(NAME parity COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
+             --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv)
     set_tests_properties(parity PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     add_executable(tugaphone_examples tests/examples.cpp)

@@ -1,0 +1,5 @@
+# Golden records that do not match until a fix in a dependency lands.
+# One entry per line, separated by tabs: the module, the golden line exactly
+# as in tests/goldens/<module>.jsonl.gz, and the fix the record waits on.
+# ctest fails when a listed record matches, so remove the entry when the fix lands.
+codeswitch	["transcribe_contact","ɡi'nɛ","en","in"]	loom-ai-org/orthography2ipa.cpp#7 (word-internal apostrophe in en-US)

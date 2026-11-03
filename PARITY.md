@@ -13,7 +13,7 @@ The corpora for each module are these:
 - A rule-coverage set built from the module tables.
 - Unicode probes and a seeded fuzz set.
 
-The test `tugaphone_parity` prints one line for each module, such as `registry: 797 in, 797 checked, 0 mismatches`. The test fails if a record has a mismatch, or if the number of records checked is not the count in the header.
+The test `tugaphone_parity` prints one line for each module, such as `registry: 797 in, 797 checked, 0 mismatches, 0 expected divergences, 0 stale entries`. The test fails if a record has a mismatch, or if the number of records checked is not the count in the header. The file `tests/parity/expected_divergences.tsv` lists the records that do not match until a fix in a dependency lands, with the fix that each record waits on. A listed record does not fail the test. The test fails if a listed record matches or is not in the goldens. Then the entry must go from the list.
 
 The header of each golden file names the reference versions:
 
@@ -80,7 +80,7 @@ The goldens hold the score and the detected language of many words. These are th
 
 `tugaphone.codeswitch` is ported in full, in `include/tugaphone/codeswitch.hpp`. `split_runs` uses the Markov detector when the models load, and the letter and stopword heuristics when they do not. The goldens cover both paths: the dumper replaces `langdetect.get_detector` with a function that returns None for the fallback path.
 
-`transcribe_contact` calls orthography2ipa.cpp for the contact lect (es-ES, fr-FR or en-US) and maps the result to Portuguese phones with the same tables. A word with an internal apostrophe needs the orthography2ipa.cpp fix in loom-ai-org/orthography2ipa.cpp#7. Without it, one record of the goldens does not match.
+`transcribe_contact` calls orthography2ipa.cpp for the contact lect (es-ES, fr-FR or en-US) and maps the result to Portuguese phones with the same tables. A word with an internal apostrophe needs the orthography2ipa.cpp fix in loom-ai-org/orthography2ipa.cpp#7. Until the submodule includes that fix, one record does not match. `tests/parity/expected_divergences.tsv` lists it.
 
 ## Accent forcing
 
