@@ -1,0 +1,16 @@
+[submodule "third_party/silabificador.cpp"]
+	path = third_party/silabificador.cpp
+	url = https://github.com/loom-ai-org/silabificador.cpp.git
+	branch = dev
+[submodule "third_party/tugalex.cpp"]
+	path = third_party/tugalex.cpp
+	url = https://github.com/loom-ai-org/tugalex.cpp.git
+	branch = dev
+[submodule "third_party/bifonia.cpp"]
+	path = third_party/bifonia.cpp
+	url = https://github.com/loom-ai-org/bifonia.cpp.git
+	branch = dev
+[submodule "third_party/orthography2ipa.cpp"]
+	path = third_party/orthography2ipa.cpp
+	url = https://github.com/loom-ai-org/orthography2ipa.cpp.git
+	branch = correct-port

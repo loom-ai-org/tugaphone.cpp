@@ -2,3 +2,5 @@ build/
 build-*/
 compile_commands.json
 *.o
+__pycache__/
+*.pyc

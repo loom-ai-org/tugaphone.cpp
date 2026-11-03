@@ -1,0 +1,754 @@
+{
+ "tugaphone": "1.4.16a1",
+ "fields": [
+  {
+   "name": "dialect_code",
+   "kind": "str"
+  },
+  {
+   "name": "HIATUS_TOKEN",
+   "kind": "str"
+  },
+  {
+   "name": "PRIMARY_STRESS_TOKEN",
+   "kind": "str"
+  },
+  {
+   "name": "SECONDARY_STRESS_TOKEN",
+   "kind": "str"
+  },
+  {
+   "name": "PUNCT2IPA",
+   "kind": "dict"
+  },
+  {
+   "name": "PUNCT_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "VOWEL_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "ACUTE_VOWEL_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "GRAVE_VOWEL_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "CIRCUM_VOWEL_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "TILDE_VOWEL_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "TREMA_VOWEL_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "SEMIVOWEL_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "FOREIGN_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "FRONT_VOWEL_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "PRIMARY_STRESS_MARKERS",
+   "kind": "set"
+  },
+  {
+   "name": "SECONDARY_STRESS_MARKERS",
+   "kind": "set"
+  },
+  {
+   "name": "ORAL_VOWELS",
+   "kind": "set"
+  },
+  {
+   "name": "NASAL_VOWELS",
+   "kind": "set"
+  },
+  {
+   "name": "CLOSED_VOWELS",
+   "kind": "set"
+  },
+  {
+   "name": "SEMI_CLOSED_VOWELS",
+   "kind": "set"
+  },
+  {
+   "name": "OPEN_VOWELS",
+   "kind": "set"
+  },
+  {
+   "name": "SEMI_OPEN_VOWELS",
+   "kind": "set"
+  },
+  {
+   "name": "ALL_VOWEL_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "MANNER_OF_ARTICULATION",
+   "kind": "dict"
+  },
+  {
+   "name": "PLACE_OF_ARTICULATION",
+   "kind": "dict"
+  },
+  {
+   "name": "VOICED_CONSONANT_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "VOICELESS_CONSONANT_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "SIBILANT_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "LIQUID_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "NASAL_CONSONANT_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "RHOTIC_CHARS",
+   "kind": "set"
+  },
+  {
+   "name": "VOWEL_HEIGHT",
+   "kind": "dict"
+  },
+  {
+   "name": "VOWEL_BACKNESS",
+   "kind": "dict"
+  },
+  {
+   "name": "ROUNDED_VOWEL_PHONES",
+   "kind": "set"
+  },
+  {
+   "name": "RISING_ORAL_DIPHTHONGS",
+   "kind": "dict"
+  },
+  {
+   "name": "FALLING_NASAL_DIPHTHONGS",
+   "kind": "dict"
+  },
+  {
+   "name": "PTBR_DIPHTHONGS",
+   "kind": "dict"
+  },
+  {
+   "name": "NORMALIZED_VOWELS",
+   "kind": "dict"
+  },
+  {
+   "name": "TETRAGRAM2IPA",
+   "kind": "dict"
+  },
+  {
+   "name": "TRIGRAM2IPA",
+   "kind": "dict"
+  },
+  {
+   "name": "TRIPHTHONG2IPA",
+   "kind": "dict"
+  },
+  {
+   "name": "DIPHTHONG2IPA",
+   "kind": "dict"
+  },
+  {
+   "name": "DIGRAPH2IPA",
+   "kind": "dict"
+  },
+  {
+   "name": "NASAL_DIGRAPHS",
+   "kind": "dict"
+  },
+  {
+   "name": "HETEROSYLLABIC_CLUSTERS",
+   "kind": "dict"
+  },
+  {
+   "name": "ARCHAIC_MUTE_P",
+   "kind": "dict_of_sets"
+  },
+  {
+   "name": "FOREIGN_DIGRAPH2IPA",
+   "kind": "dict"
+  },
+  {
+   "name": "HIATUS_PREFIXES",
+   "kind": "set"
+  },
+  {
+   "name": "DEFAULT_CHAR2PHONEMES",
+   "kind": "dict"
+  },
+  {
+   "name": "IRREGULAR_WORDS",
+   "kind": "dict"
+  },
+  {
+   "name": "OXYTONE_ENDINGS",
+   "kind": "set"
+  },
+  {
+   "name": "GRAPHEME_INVENTORY",
+   "kind": "list"
+  }
+ ],
+ "defaults": {
+  "PUNCT_CHARS": [
+   "!",
+   "\"",
+   "#",
+   "$",
+   "%",
+   "&",
+   "'",
+   "(",
+   ")",
+   "*",
+   "+",
+   ",",
+   "-",
+   ".",
+   "/",
+   ":",
+   ";",
+   "<",
+   "=",
+   ">",
+   "?",
+   "@",
+   "[",
+   "\\",
+   "]",
+   "^",
+   "_",
+   "`",
+   "{",
+   "|",
+   "}",
+   "~"
+  ],
+  "VOWEL_CHARS": [
+   "a",
+   "e",
+   "i",
+   "o",
+   "u"
+  ],
+  "ACUTE_VOWEL_CHARS": [
+   "á",
+   "é",
+   "í",
+   "ó",
+   "ú"
+  ],
+  "GRAVE_VOWEL_CHARS": [
+   "à",
+   "è",
+   "ì",
+   "ò",
+   "ù"
+  ],
+  "CIRCUM_VOWEL_CHARS": [
+   "â",
+   "ê",
+   "î",
+   "ô",
+   "û"
+  ],
+  "TILDE_VOWEL_CHARS": [
+   "ã",
+   "õ",
+   "ĩ",
+   "ũ",
+   "ẽ"
+  ],
+  "TREMA_VOWEL_CHARS": [
+   "ä",
+   "ë",
+   "ï",
+   "ö",
+   "ü"
+  ],
+  "SEMIVOWEL_CHARS": [
+   "e",
+   "i",
+   "o",
+   "u"
+  ],
+  "FOREIGN_CHARS": [
+   "k",
+   "w",
+   "y",
+   "ÿ"
+  ],
+  "FRONT_VOWEL_CHARS": [
+   "e",
+   "i",
+   "é",
+   "ê",
+   "í"
+  ],
+  "ORAL_VOWELS": [
+   "a",
+   "e",
+   "i",
+   "o",
+   "u",
+   "ɐ",
+   "ɔ",
+   "ə",
+   "ɛ",
+   "ɨ"
+  ],
+  "NASAL_VOWELS": [
+   "õ",
+   "ĩ",
+   "ũ",
+   "ɐ",
+   "̃",
+   "ẽ"
+  ],
+  "CLOSED_VOWELS": [
+   "i",
+   "u",
+   "ɨ"
+  ],
+  "SEMI_CLOSED_VOWELS": [
+   "e",
+   "o"
+  ],
+  "OPEN_VOWELS": [
+   "a"
+  ],
+  "SEMI_OPEN_VOWELS": [
+   "ɐ",
+   "ɔ",
+   "ɛ"
+  ],
+  "MANNER_OF_ARTICULATION": {
+   "p": "plosive",
+   "b": "plosive",
+   "t": "plosive",
+   "d": "plosive",
+   "k": "plosive",
+   "g": "plosive",
+   "q": "plosive",
+   "c": "plosive",
+   "f": "fricative",
+   "v": "fricative",
+   "s": "fricative",
+   "z": "fricative",
+   "x": "fricative",
+   "j": "fricative",
+   "ç": "fricative",
+   "m": "nasal",
+   "n": "nasal",
+   "l": "lateral",
+   "r": "rhotic"
+  },
+  "PLACE_OF_ARTICULATION": {
+   "p": "bilabial",
+   "b": "bilabial",
+   "m": "bilabial",
+   "f": "labiodental",
+   "v": "labiodental",
+   "t": "alveolar",
+   "d": "alveolar",
+   "n": "alveolar",
+   "s": "alveolar",
+   "z": "alveolar",
+   "l": "alveolar",
+   "ç": "alveolar",
+   "r": "alveolar",
+   "x": "postalveolar",
+   "j": "postalveolar",
+   "k": "velar",
+   "g": "velar",
+   "q": "velar",
+   "c": "velar"
+  },
+  "VOICED_CONSONANT_CHARS": [
+   "b",
+   "d",
+   "g",
+   "j",
+   "l",
+   "m",
+   "n",
+   "r",
+   "v",
+   "z"
+  ],
+  "VOICELESS_CONSONANT_CHARS": [
+   "c",
+   "f",
+   "k",
+   "p",
+   "q",
+   "s",
+   "t",
+   "x",
+   "ç"
+  ],
+  "SIBILANT_CHARS": [
+   "j",
+   "s",
+   "x",
+   "z",
+   "ç"
+  ],
+  "LIQUID_CHARS": [
+   "l",
+   "r"
+  ],
+  "NASAL_CONSONANT_CHARS": [
+   "m",
+   "n"
+  ],
+  "RHOTIC_CHARS": [
+   "r"
+  ],
+  "VOWEL_BACKNESS": {
+   "i": "front",
+   "e": "front",
+   "ɛ": "front",
+   "y": "front",
+   "ɨ": "central",
+   "ə": "central",
+   "ɐ": "central",
+   "a": "central",
+   "u": "back",
+   "o": "back",
+   "ɔ": "back"
+  },
+  "ROUNDED_VOWEL_PHONES": [
+   "o",
+   "u",
+   "y",
+   "ɔ"
+  ],
+  "RISING_ORAL_DIPHTHONGS": {
+   "aj": "ai",
+   "ɐj": "ai",
+   "ɛj": "éi",
+   "ej": "ei",
+   "ɔj": "ói",
+   "oj": "oi",
+   "uj": "ui",
+   "iw": "iu",
+   "ew": "eu",
+   "ɛw": "éu",
+   "aw": "au",
+   "ɐw": "ao",
+   "ow": "ou"
+  },
+  "FALLING_NASAL_DIPHTHONGS": {
+   "ɐ̃j": "ãe",
+   "ẽj": "em",
+   "õj": "õe",
+   "ɐ̃w": "ão"
+  },
+  "PTBR_DIPHTHONGS": {
+   "aw": "al",
+   "ɛw": "el",
+   "ew": "el",
+   "iw": "il",
+   "ɔw": "ol",
+   "ow": "ol",
+   "uw": "ul"
+  },
+  "NORMALIZED_VOWELS": {
+   "î": "i",
+   "û": "u",
+   "ẽ": "ê",
+   "ĩ": "i",
+   "ũ": "u",
+   "è": "é",
+   "ì": "í",
+   "ò": "ó",
+   "ù": "ú",
+   "ä": "á",
+   "ë": "é",
+   "ï": "í",
+   "ö": "ó",
+   "ü": "w",
+   "ÿ": "í"
+  },
+  "TETRAGRAM2IPA": {
+   "aien": "ɐj.ẽ",
+   "guai": "gwaj",
+   "quai": "kwaj",
+   "iaiá": "i.ɐ.ˈja"
+  },
+  "TRIGRAM2IPA": {
+   "tch": "tʃ",
+   "que": "kɨ",
+   "qui": "ki",
+   "gue": "ɡɨ",
+   "gui": "ɡi",
+   "qué": "kɛ",
+   "gué": "ɡɛ",
+   "quê": "ke",
+   "guê": "ɡe",
+   "coo": "ku.u",
+   "joo": "ʒo.u",
+   "noo": "nu.u",
+   "zoo": "zu.u",
+   "voo": "vo.u",
+   "boo": "bu.u",
+   "too": "tu.u",
+   "woo": "wu.u",
+   "hoo": "u.u",
+   "ção": "sɐ̃w̃",
+   "ões": "õj̃ʃ"
+  },
+  "TRIPHTHONG2IPA": {
+   "uai": "waj",
+   "uão": "wɐ̃w"
+  },
+  "DIGRAPH2IPA": {
+   "nh": "ɲ",
+   "lh": "ʎ",
+   "ch": "ʃ",
+   "rr": "ʀ",
+   "ss": "s",
+   "th": "t",
+   "rh": "r",
+   "ph": "f"
+  },
+  "NASAL_DIGRAPHS": {
+   "am": "ɐ̃",
+   "âm": "ɐ̃",
+   "an": "ɐ̃",
+   "ân": "ɐ̃",
+   "em": "ẽ",
+   "êm": "ẽ",
+   "en": "ẽ",
+   "ên": "ẽ",
+   "im": "ĩ",
+   "in": "ĩ",
+   "om": "õ",
+   "ôm": "õ",
+   "on": "õ",
+   "ôn": "õ",
+   "um": "ũ",
+   "un": "ũ"
+  },
+  "HETEROSYLLABIC_CLUSTERS": {
+   "cç": "k·s",
+   "cc": "k·s",
+   "ct": "k·t",
+   "pt": "p·t",
+   "pç": "p·s",
+   "pc": "p·s"
+  },
+  "ARCHAIC_MUTE_P": {
+   "mpc": [
+    "assumpcionista"
+   ],
+   "mpç": [
+    "assumpção"
+   ],
+   "mpt": [
+    "assumptível",
+    "peremptório",
+    "sumptuosidade",
+    "sumptuoso"
+   ]
+  },
+  "FOREIGN_DIGRAPH2IPA": {
+   "ff": "f",
+   "ll": "l",
+   "sh": "ʃ",
+   "th": "t"
+  },
+  "HIATUS_PREFIXES": [
+   "ante",
+   "anti",
+   "auto",
+   "bi",
+   "contra",
+   "extra",
+   "hiper",
+   "inter",
+   "intra",
+   "mini",
+   "multi",
+   "neo",
+   "pré",
+   "pró",
+   "re",
+   "semi",
+   "sub",
+   "super",
+   "supra",
+   "ultra"
+  ],
+  "DEFAULT_CHAR2PHONEMES": {
+   "a": "ɐ",
+   "á": "a",
+   "à": "a",
+   "â": "ɐ",
+   "ã": "ɐ̃",
+   "e": "ɨ",
+   "é": "ɛ",
+   "ê": "e",
+   "i": "i",
+   "í": "i",
+   "o": "u",
+   "ó": "ɔ",
+   "ô": "o",
+   "õ": "õ",
+   "u": "u",
+   "ú": "u",
+   "p": "p",
+   "b": "b",
+   "t": "t",
+   "d": "d",
+   "k": "k",
+   "c": "k",
+   "q": "k",
+   "g": "ɡ",
+   "f": "f",
+   "v": "v",
+   "s": "s",
+   "z": "z",
+   "ç": "s",
+   "j": "ʒ",
+   "x": "ʃ",
+   "m": "m",
+   "n": "n",
+   "l": "l",
+   "r": "ɾ",
+   "w": "w",
+   "y": "j",
+   "h": ""
+  },
+  "OXYTONE_ENDINGS": [
+   "au",
+   "l",
+   "m",
+   "n",
+   "r",
+   "x",
+   "z",
+   "á",
+   "áu",
+   "â",
+   "ã",
+   "ãe",
+   "ão",
+   "é",
+   "éi",
+   "éu",
+   "ê",
+   "í",
+   "ó",
+   "ói",
+   "ô",
+   "õ",
+   "õe",
+   "ú"
+  ]
+ },
+ "ARCHAIC_WORDS": [
+  "architectura",
+  "caravella",
+  "diccionario",
+  "diphthongo",
+  "estylo",
+  "grammatica",
+  "kilometro",
+  "lyrio",
+  "orthographia",
+  "parochia",
+  "pharmacia",
+  "phleugma",
+  "prompto",
+  "psalmo",
+  "psychologia",
+  "rheumatismo",
+  "sanccionar",
+  "theatro"
+ ],
+ "AO1990": {
+  "dialect_code": "pt",
+  "IRREGULAR_WORDS": {
+   "muito": "ˈmũj.tu",
+   "miau": "ˈmjaw"
+  }
+ },
+ "merges": {
+  "EuropeanPortuguese": {
+   "FALLING_NASAL_DIPHTHONGS": {
+    "ũj": "ui"
+   },
+   "TRIPHTHONG2IPA": {
+    "iei": "jej",
+    "iau": "jaw"
+   }
+  },
+  "BrazilianPortuguese": {
+   "DIGRAPH2IPA": {
+    "rr": "h"
+   },
+   "DEFAULT_CHAR2PHONEMES": {
+    "a": "a",
+    "â": "a",
+    "e": "e",
+    "o": "o"
+   }
+  },
+  "AngolanPortuguese": {
+   "DIGRAPH2IPA": {
+    "rr": "r"
+   },
+   "DEFAULT_CHAR2PHONEMES": {
+    "a": "a",
+    "e": "e",
+    "o": "o"
+   }
+  },
+  "MozambicanPortuguese": {
+   "DIGRAPH2IPA": {
+    "rr": "r"
+   },
+   "DEFAULT_CHAR2PHONEMES": {
+    "e": "e",
+    "o": "o"
+   }
+  },
+  "TimoresePortuguese": {
+   "DIGRAPH2IPA": {
+    "rr": "r"
+   },
+   "DEFAULT_CHAR2PHONEMES": {
+    "a": "ə",
+    "e": "e",
+    "o": "o"
+   }
+  }
+ }
+}
