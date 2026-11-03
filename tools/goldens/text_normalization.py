@@ -84,9 +84,15 @@ def corpora(repo):
     alphabet = list("0123456789.,-–:x×€% ºª") + ["kg", "km", "D.", "Sr.", "Maria", "IV", "X", "T", "IA", "EU", " ",
                                                  "٣", "é", "(", ")", "“", "”"]
     fuzz = common.unique(common.fuzz_strings(23, 3000, alphabet, 10))
+    edges = common.unique(f"{lead}{core}{trail} e {lead}{core}{trail}"
+                          for core in ("IA", "EU", "GPS", "PDF", "T2", "A1B2", "XIV", "7kg", "16:00")
+                          for lead in ("", "(", "“", "\"", "'", "¿", "¡")
+                          for trail in ("", ".", ",", ";", ":", "!", "?", ")", "\"", "”", "…", "...", ".…"))
+    edges += ["T" + "1" * 4300, "T" + "1" * 4301, "T" + "0" * 4301]
     out = [("tests", [record(t, LANGS[i % 2]) for i, t in enumerate(tests)]),
            ("rules", [record(t, "pt-PT") for t in rules]),
            ("langs", [record(t, lang) for t in rules[::17] for lang in LANGS]),
            ("unicode", [record(t, "pt-PT") for t in probes]),
+           ("edges", [record(f"A {t}", LANGS[i % 2]) for i, t in enumerate(edges)]),
            ("fuzz", [record(t, LANGS[i % len(LANGS)]) for i, t in enumerate(fuzz)])]
     return out

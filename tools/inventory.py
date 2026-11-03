@@ -135,6 +135,15 @@ def cli_table():
     return lines, {"later phase": len(items)}
 
 
+def data_readers(rel):
+    """Modules that open data/<rel>: their source quotes its first path component."""
+    quoted = '"' + rel.split("/")[0] + '"'
+    readers = {p.stem for p in PKG.glob("*.py") if quoted in p.read_text(encoding="utf-8")}
+    if not readers:
+        raise SystemExit(f"no module of the package reads data/{rel}")
+    return readers
+
+
 def data_table():
     lines = ["| Python name | Kind | C++ name | Status |", "| --- | --- | --- | --- |"]
     counts = {}
@@ -142,9 +151,12 @@ def data_table():
         if path.is_file():
             rel = path.relative_to(PKG / "data").as_posix()
             ours = ROOT / "data" / rel
-            status = "phase 1" if ours.is_file() and ours.read_bytes() == path.read_bytes() else "later phase"
+            readers = data_readers(rel)
+            verbatim = ours.is_file() and ours.read_bytes() == path.read_bytes()
+            status = max(PORTED[r] for r in readers) if verbatim and readers <= PORTED.keys() else "later phase"
             counts[status] = counts.get(status, 0) + 1
-            lines.append(f"| `data/{rel}` | data file | `data/{rel}` (verbatim) | {status} |")
+            lines.append(f"| `data/{rel}` | data file, read by {', '.join(sorted(readers))} | `data/{rel}` (verbatim) "
+                         f"| {status} |")
     return lines, counts
 
 

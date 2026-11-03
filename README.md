@@ -20,11 +20,15 @@ tugaphone::number_utils::normalize_numbers("Comprei 2 casas.");
 
 The library uses four other ports, which are git submodules under `third_party/`: silabificador.cpp, tugalex.cpp, bifonia.cpp and orthography2ipa.cpp. Clone with `--recursive`, or run `git submodule update --init` after the clone. orthography2ipa.cpp needs the Boost headers and ICU. The tests need zlib.
 
+With Boost 1.86 and later, the pinned orthography2ipa.cpp does not compile: `get_child` with a temporary default tree is a deleted function. orthography2ipa.cpp pull request 1 (https://github.com/loom-ai-org/orthography2ipa.cpp/pull/1) fixes it. Until the submodule pin includes that fix, use Boost 1.85 or earlier, or apply the change of that pull request to `third_party/orthography2ipa.cpp`. A project that uses the installed package must also find Boost, because the installed orthography2ipa configuration calls `find_dependency(Boost)`. If Boost is not in a default location, set `BOOST_ROOT`.
+
 To use installed copies of the four ports, set `-DTUGAPHONE_USE_SYSTEM_DEPS=ON`. CMake then finds them with `find_package`.
 
 ## Data files
 
 The library reads its data at run time. `cmake --install` puts the files in `<prefix>/share/tugaphone`, and the library looks there by default. To use another directory, set the environment variable `TUGAPHONE_DATA_DIR` or call `tugaphone::set_data_dir()` before the first call. The tugalex lexicon has its own data directory and its own variable, `TUGALEX_DATA_DIR`.
+
+The orthography2ipa data has its own variable, `ORTHOGRAPHY2IPA_DATA_DIR`, and its own call, `orthography2ipa::set_data_directory()`. The registry gets its list of lects from this data. If the directory is missing, the library does not stop: `list_dialects()` returns an empty list, and each code resolves to the default lect "pt-PT". The Python package does the same when its orthography2ipa data is missing. If `list_dialects()` is empty, check `ORTHOGRAPHY2IPA_DATA_DIR`.
 
 ## Build
 

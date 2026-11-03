@@ -146,6 +146,7 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/dialects.cpp
         tests/parity/text_normalization.cpp
         tests/parity/number_utils.cpp
+        tests/parity/version.cpp
         tests/parity/tokenizer.cpp
     )
     target_include_directories(tugaphone_parity PRIVATE tests)

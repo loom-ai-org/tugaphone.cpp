@@ -11,6 +11,7 @@ import warnings
 
 from ovos_number_parser import pronounce_number
 from ovos_number_parser.util import DigitPronunciation, GrammaticalGender, Scale
+from tugalex import TugaLexicon
 from tugaphone import text_normalization as tn
 from tugaphone.number_utils import NumberParser as NP, normalize_numbers
 
@@ -155,6 +156,25 @@ def sentence_records(texts, langs, stricts=(True, False), scales=(None,)):
     return out
 
 
+# Python's int() and float() read these words as numbers, so normalize_numbers
+# treats them as numeric tokens.
+NONFINITE = ["o Inf. Henrique", "inf", "-inf", "+inf", "INF.", "Inf,", "nan", "NaN!", "o NaN", "Infinity", "infinity…",
+             "-Infinity", "iNfInItY", "nan e 2", "2 inf", "1 Inf. 2", "(inf)", "inf.", "infs", "nans", "infinite"]
+
+
+def noun_texts():
+    """Counted nouns of the lexicon that end in -agem or hold a hyphen, after a number."""
+    nouns = sorted(TugaLexicon().get_ipa_map("NOUN", "lbx"))
+    agem = [w for w in nouns if w.endswith("agem")]
+    hyphen = [w for w in nouns if "-" in w]
+    out = []
+    for w in agem:
+        out += [f"1 {w}", f"2 {w[:-1]}ns", f"a 1 {w}", f"o 1 {w}.", f"21 {w.upper()}"]
+    for w in hyphen:
+        out += [f"1 {w}", f"2 {w}s", f"1 {w}…"]
+    return out
+
+
 def corpora(repo):
     test_strings = common.unique(common.test_strings(repo))
     test_tokens = common.unique(t for s in test_strings for t in s.split() if any(c.isdigit() for c in t))
@@ -177,6 +197,8 @@ def corpora(repo):
         ("tests", sentence_records(test_strings, ["pt-PT", "pt-BR"], scales=(None, "short", "long"))),
         ("rules", sentence_records(rules_normalized, langs)),
         ("units", sentence_records(unit_texts, ["pt-PT", "pt-BR"])),
+        ("nouns", sentence_records(common.unique(noun_texts()), ["pt-PT", "pt-BR"])),
+        ("nonfinite", sentence_records(NONFINITE, ["pt-PT", "pt-BR"])),
         ("unicode", sentence_records(probes, ["pt-PT", "pt-BR"])),
         ("fuzz", sentence_records(fuzz, langs, scales=(None, "short"))),
     ]

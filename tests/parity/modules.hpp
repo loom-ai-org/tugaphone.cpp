@@ -13,6 +13,7 @@
     X(dialects)                     \
     X(text_normalization)           \
     X(number_utils)                 \
+    X(version)                      \
     X(tokenizer)
 
 namespace parity {
