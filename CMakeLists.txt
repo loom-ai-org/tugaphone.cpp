@@ -152,6 +152,7 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/dialects.cpp
         tests/parity/text_normalization.cpp
         tests/parity/number_utils.cpp
+        tests/parity/version.cpp
         tests/parity/markov.cpp
         tests/parity/langdetect.cpp
         tests/parity/codeswitch.cpp
