@@ -6,6 +6,7 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 
 #include <pwd.h>
@@ -15,6 +16,7 @@
 #include <orthography2ipa/orthography2ipa.hpp>
 
 #include "detail.hpp"
+#include "o2i_registry.hpp"
 #include "tugaphone/dialects.hpp"
 #include "tugaphone/number_utils.hpp"
 #include "tugaphone/registry.hpp"
@@ -161,7 +163,10 @@ bool is_stale(const std::string& path) {
     return s8(detail::strip_ws(u(stamp))) != tugalex_version();
 }
 
-void ensure_lexicon(const std::string& lect) {
+namespace {
+
+// The caller holds detail::o2i_registry_mutex().
+void ensure_lexicon_locked(const std::string& lect) {
     if (registered().count(lect)) return;
     const auto region = registry::lexicon_region(lect);
     if (!region) {
@@ -175,16 +180,12 @@ void ensure_lexicon(const std::string& lect) {
     registered().insert(lect);
 }
 
-std::string normalize(std::string_view text, const std::string& lect) {
-    const std::string orthography = text_normalization::normalize_orthography(text, lect);
-    return bifonia::add_extra_diacritics(number_utils::normalize_numbers(orthography, lect));
-}
-
-const o2i::G2P& engine(const std::string& lect) {
+// The caller holds detail::o2i_registry_mutex().
+const o2i::G2P& engine_locked(const std::string& lect) {
     auto& slot = engines()[lect];
     if (!slot) {
         try {
-            ensure_lexicon(lect);
+            ensure_lexicon_locked(lect);
             const std::string plugin = "tugaphone:" + lect;
             o2i::register_normalize_plugin(plugin, std::make_shared<Normalizer>(lect));
             slot = std::make_unique<o2i::G2P>(lect, std::map<std::string, std::vector<std::string>>{
@@ -195,6 +196,28 @@ const o2i::G2P& engine(const std::string& lect) {
         }
     }
     return *slot;
+}
+
+std::string transcribe(const std::string& lect, const std::string& text) {
+    const std::lock_guard<std::mutex> lock(detail::o2i_registry_mutex());
+    return engine_locked(lect).transcribe(text);
+}
+
+}  // namespace
+
+void ensure_lexicon(const std::string& lect) {
+    const std::lock_guard<std::mutex> lock(detail::o2i_registry_mutex());
+    ensure_lexicon_locked(lect);
+}
+
+std::string normalize(std::string_view text, const std::string& lect) {
+    const std::string orthography = text_normalization::normalize_orthography(text, lect);
+    return bifonia::add_extra_diacritics(number_utils::normalize_numbers(orthography, lect));
+}
+
+const o2i::G2P& engine(const std::string& lect) {
+    const std::lock_guard<std::mutex> lock(detail::o2i_registry_mutex());
+    return engine_locked(lect);
 }
 
 void validate_contact(std::string_view contact) {
@@ -211,7 +234,7 @@ std::string phonemize_runs(const std::string& lect, const std::vector<Run>& runs
     std::vector<U32> pt_buffer;
     auto flush = [&] {
         if (!pt_buffer.empty()) {
-            out.push_back(engine(lect).transcribe(s8(detail::join(pt_buffer, U" "))));
+            out.push_back(transcribe(lect, s8(detail::join(pt_buffer, U" "))));
             pt_buffer.clear();
         }
     };
@@ -238,7 +261,7 @@ std::string phonemize_runs(const std::string& lect, const std::vector<Run>& runs
 std::string phonemize(std::string_view text, std::string_view lang, std::string_view contact) {
     validate_contact(contact);
     const std::string lect = registry::resolve_lect(lang);
-    if (contact == "none") return engine(lect).transcribe(std::string(text));
+    if (contact == "none") return transcribe(lect, std::string(text));
     const std::string side = registry::default_contact(lect);
     return phonemize_runs(lect, codeswitch::split_runs(text, contact, side),
                           [](const std::string& token, const std::string& lang) {
@@ -247,6 +270,7 @@ std::string phonemize(std::string_view text, std::string_view lang, std::string_
 }
 
 void clear_caches() {
+    const std::lock_guard<std::mutex> lock(detail::o2i_registry_mutex());
     engines().clear();
     registered().clear();
 }

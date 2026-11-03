@@ -84,6 +84,7 @@ add_library(tugaphone
     src/registry.cpp
     src/dialects.cpp
     src/unicode_norm.cpp
+    src/o2i_registry.cpp
     src/pyre.cpp
     src/markov.cpp
     src/langdetect.cpp
@@ -202,23 +203,47 @@ if(TUGAPHONE_BUILD_TESTS)
     target_include_directories(tugaphone_parity PRIVATE src)
     find_package(Threads REQUIRED)
     target_link_libraries(tugaphone_parity PRIVATE tugaphone tugaphone_benchmark_core ZLIB::ZLIB Threads::Threads)
-    set(_tugaphone_goldens ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
-        --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv)
-    set(_tugaphone_parity_tests parity parity_plugin parity_cli parity_benchmark parity_small_stack)
-    add_test(NAME parity COMMAND tugaphone_parity ${_tugaphone_goldens} registry dialects text_normalization
-             number_utils version markov langdetect codeswitch accent lattice_core tokenizer)
-    # The package records run the whole engine five times each: shards let
-    # ctest -j run them in parallel processes.
-    set(_tugaphone_package_shards 8)
-    math(EXPR _last "${_tugaphone_package_shards} - 1")
-    foreach(k RANGE ${_last})
-        add_test(NAME parity_package_${k} COMMAND tugaphone_parity ${_tugaphone_goldens}
-                 --shard ${k}/${_tugaphone_package_shards} package)
-        list(APPEND _tugaphone_parity_tests parity_package_${k})
+    # One parity test per module, so that ctest -j runs the modules in parallel
+    # and the timeout applies to each module. The engine writes the tugalex
+    # lexicon TSVs to its cache, one cache per test.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS tests/parity/modules.hpp)
+    file(READ ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/modules.hpp _parity_header)
+    string(REGEX MATCHALL "X\\([a-z_]+\\)" _parity_modules "${_parity_header}")
+    list(TRANSFORM _parity_modules REPLACE "X\\(([a-z_]+)\\)" "\\1")
+    # The engine goldens take more than an hour under the sanitizers, so a
+    # sanitizer build can check every n-th engine and package record.
+    set(TUGAPHONE_LATTICE_CORE_STRIDE 1 CACHE STRING "Check every n-th lattice_core golden record")
+    set(TUGAPHONE_PACKAGE_STRIDE 1 CACHE STRING "Check every n-th package golden record")
+    set(_parity_tests)
+    foreach(_module IN LISTS _parity_modules)
+        if(_module STREQUAL "package")
+            continue()
+        endif()
+        set(_stride 1)
+        if(_module STREQUAL "lattice_core")
+            set(_stride ${TUGAPHONE_LATTICE_CORE_STRIDE})
+        endif()
+        add_test(NAME parity_${_module} COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
+                 --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv
+                 --stride ${_stride} ${_module})
+        list(APPEND _parity_tests parity_${_module})
     endforeach()
-    add_test(NAME parity_plugin COMMAND tugaphone_parity ${_tugaphone_goldens} plugin)
-    add_test(NAME parity_cli COMMAND tugaphone_parity ${_tugaphone_goldens} cli)
-    add_test(NAME parity_benchmark COMMAND tugaphone_parity ${_tugaphone_goldens} benchmark)
+    # The package records run the whole engine five times each, so eight
+    # shard tests share them. With a stride s, shard k checks the records whose
+    # index modulo 8s is k: every s-th record in all.
+    math(EXPR _package_count "8 * ${TUGAPHONE_PACKAGE_STRIDE}")
+    foreach(_k RANGE 7)
+        add_test(NAME parity_package_${_k} COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
+                 --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv
+                 --shard ${_k}/${_package_count} package)
+        list(APPEND _parity_tests parity_package_${_k})
+    endforeach()
+    foreach(_test IN LISTS _parity_tests)
+        set_tests_properties(${_test} PROPERTIES ENVIRONMENT
+            "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-${_test}")
+    endforeach()
+    # The command-line records run the executable in the source tree, and the
+    # benchmark records read the gold fixtures there.
     set_property(TEST parity_cli APPEND PROPERTY ENVIRONMENT "TUGAPHONE_CLI=$<TARGET_FILE:tugaphone_cli>"
                  "TUGAPHONE_CLI_CWD=${CMAKE_CURRENT_SOURCE_DIR}")
     set_property(TEST parity_benchmark APPEND PROPERTY ENVIRONMENT
@@ -228,12 +253,14 @@ if(TUGAPHONE_BUILD_TESTS)
     # per character.
     add_test(NAME parity_small_stack COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
              --stack-kb 512 accent)
-    # The engine writes the tugalex lexicon TSVs to its cache. Each test has a
-    # cache of its own, because ctest -j runs them at the same time.
-    foreach(t ${_tugaphone_parity_tests})
-        set_property(TEST ${t} APPEND PROPERTY ENVIRONMENT ${_tugaphone_test_env}
-                     "TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache/${t}")
-    endforeach()
+    set_tests_properties(parity_small_stack PROPERTIES ENVIRONMENT
+        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-small-stack")
+
+    add_executable(tugaphone_threads_lattice_core tests/threads_lattice_core.cpp)
+    target_link_libraries(tugaphone_threads_lattice_core PRIVATE tugaphone Threads::Threads)
+    add_test(NAME threads_lattice_core COMMAND tugaphone_threads_lattice_core)
+    set_tests_properties(threads_lattice_core PROPERTIES ENVIRONMENT
+        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-threads")
 
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)

@@ -19,7 +19,9 @@ The corpora for each module are these:
 
 The test `tugaphone_parity` prints one line for each module, such as `registry: 797 in, 797 checked, 0 mismatches, 0 expected divergences, 0 stale entries`. The test fails if a record has a mismatch, or if the number of records checked is not the count in the header. The file `tests/parity/expected_divergences.tsv` lists the records that do not match until a fix in a dependency lands, with the fix that each record waits on. A listed record does not fail the test. The test fails if a listed record matches or is not in the goldens. Then the entry must go from the list.
 
-Parity is tested on x86-64 Linux with glibc, with gcc and clang, at the baseline x86-64 level, at x86-64-v3 and with `-march=native`. It is not tested on aarch64 or on other systems. The Markov scorer calls `log` and `exp` from the C library, as Python does. Its parity thus needs a libm that gives the same bits as the reference libm. On 32-bit x86 the scorer does not hold parity. With x87 floating point, 56,698 of 299,460 scorer records differ. With `-msse2 -mfpmath=sse`, 79 perplexity records differ, because the i386 `log` and `exp` differ in the last bit.
+ctest runs one test for each module, `parity_<module>`, so `ctest -j` runs the modules in parallel. Under ASan the engine goldens take more than an hour. The sanitizer job thus sets `TUGAPHONE_LATTICE_CORE_STRIDE`, and `--stride <n>` checks every n-th engine record. A listed divergence of a record that is not checked is not counted.
+
+Parity is tested on x86-64 Linux with glibc, with gcc and clang, at the baseline x86-64 level, at x86-64-v3 and with `-march=native`. It is not tested on aarch64 or on other systems. The Markov scorer calls `log` and `exp` from the C library, as Python does. Its parity thus needs a libm that gives the same bits as the reference libm. On 32-bit x86 the scorer does not hold parity. A corpus of 299,460 scorer records, the goldens and seeded synthetic models, was run on i386. With x87 floating point, 56,698 records differ. With `-msse2 -mfpmath=sse`, 79 perplexity records differ, because the i386 `log` and `exp` differ in the last bit.
 
 The header of each golden file names the reference versions:
 
@@ -134,6 +136,8 @@ Some engine records wait on fixes in orthography2ipa.cpp. `tests/parity/expected
 | Two or three of these fixes together | 268 |
 
 With orthography2ipa.cpp PRs #1 and #5 to #18 merged into the submodule, every engine record matches.
+
+orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads, and CI runs it under ThreadSanitizer.
 
 ## Python defects kept for parity
 

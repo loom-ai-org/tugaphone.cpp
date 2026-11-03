@@ -29,7 +29,7 @@ jobs:
       - name: Build
         run: cmake --build build -j
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure -j 4
       - name: Install and build a consumer
         run: |
           cmake --install build
@@ -47,8 +47,26 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libboost-dev libicu-dev
       - name: Build with ASan and UBSan
         run: |
-          CXX=clang++ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug \
+          CXX=clang++ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DTUGAPHONE_LATTICE_CORE_STRIDE=20 \
             -DCMAKE_CXX_FLAGS="-O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all"
           cmake --build build -j
       - name: Test
-        run: ctest --test-dir build --output-on-failure --timeout 1800
+        run: ctest --test-dir build --output-on-failure --timeout 1800 -j 4
+
+  thread-sanitizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libboost-dev libicu-dev
+      # ThreadSanitizer cannot map its shadow memory with the runner's default ASLR entropy.
+      - name: Lower the ASLR entropy
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - name: Build with TSan
+        run: |
+          CXX=clang++ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-O1 -g -fsanitize=thread"
+          cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -R '^threads_'
