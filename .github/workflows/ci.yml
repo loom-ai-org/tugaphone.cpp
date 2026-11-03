@@ -52,3 +52,21 @@ jobs:
           cmake --build build -j
       - name: Test
         run: ctest --test-dir build --output-on-failure --timeout 1800
+
+  thread-sanitizer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libboost-dev libicu-dev
+      # ThreadSanitizer cannot map its shadow memory with the runner's default ASLR entropy.
+      - name: Lower the ASLR entropy
+        run: sudo sysctl vm.mmap_rnd_bits=28
+      - name: Build the thread tests with TSan
+        run: |
+          CXX=clang++ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-O1 -g -fsanitize=thread"
+          cmake --build build -j --target tugaphone_threads_tokenizer
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -R '^threads_'

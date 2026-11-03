@@ -11,6 +11,7 @@
 
 #include "detail.hpp"
 #include "nfd.hpp"
+#include "o2i_registry.hpp"
 #include "tugaphone/number_utils.hpp"
 
 namespace tugaphone::tokenizer {
@@ -101,13 +102,10 @@ const o2i::PhonetokTokenizer& phonetok(const std::string& dialect_code, const st
 // _spec_stress_rules(dialect_code): the spec whose stress block applies, or
 // null when the code has no spec or the spec has no stress block.
 const o2i::LanguageSpec* spec_stress_rules(const std::string& dialect_code) {
-    static std::mutex mutex;
     static std::map<std::string, const o2i::LanguageSpec*> cache;
-    {
-        const std::lock_guard<std::mutex> guard(mutex);
-        const auto it = cache.find(dialect_code);
-        if (it != cache.end()) return it->second;
-    }
+    const std::lock_guard<std::mutex> guard(detail::o2i_registry_mutex());
+    const auto it = cache.find(dialect_code);
+    if (it != cache.end()) return it->second;
     const o2i::LanguageSpec* rules = nullptr;
     try {
         const o2i::LanguageSpec& spec = o2i::get(dialect_code);
@@ -115,7 +113,6 @@ const o2i::LanguageSpec* spec_stress_rules(const std::string& dialect_code) {
     } catch (const std::exception&) {
         rules = nullptr;
     }
-    const std::lock_guard<std::mutex> guard(mutex);
     cache[dialect_code] = rules;
     return rules;
 }

@@ -81,6 +81,7 @@ add_library(tugaphone
     src/registry.cpp
     src/dialects.cpp
     src/nfd.cpp
+    src/o2i_registry.cpp
     src/tokenizer.cpp
 )
 add_library(tugaphone::tugaphone ALIAS tugaphone)
@@ -153,6 +154,12 @@ if(TUGAPHONE_BUILD_TESTS)
     target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB)
     add_test(NAME parity COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens)
     set_tests_properties(parity PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+
+    find_package(Threads REQUIRED)
+    add_executable(tugaphone_threads_tokenizer tests/threads_tokenizer.cpp)
+    target_link_libraries(tugaphone_threads_tokenizer PRIVATE tugaphone Threads::Threads)
+    add_test(NAME threads_tokenizer COMMAND tugaphone_threads_tokenizer)
+    set_tests_properties(threads_tokenizer PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)
