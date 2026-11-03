@@ -167,7 +167,7 @@ if(TUGAPHONE_BUILD_TESTS)
     # The phase-internal headers under src/ expose the private functions the goldens call.
     target_include_directories(tugaphone_parity PRIVATE src)
     find_package(Threads REQUIRED)
-    target_link_libraries(tugaphone_parity PRIVATE tugaphone ZLIB::ZLIB Threads::Threads)
+    target_link_libraries(tugaphone_parity PRIVATE tugaphone orthography2ipa::orthography2ipa ZLIB::ZLIB Threads::Threads)
     # One parity test per module, so that ctest -j runs the modules in parallel
     # and the timeout applies to each module. The engine writes the tugalex
     # lexicon TSVs to its cache, one cache per test.

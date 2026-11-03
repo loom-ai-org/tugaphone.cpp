@@ -1,10 +1,11 @@
 # tugaphone.cpp
 
-A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package, byte for byte, except for the records in `tests/parity/expected_divergences.tsv`. These wait on a fix in a dependency: English words with an apostrophe, such as "don't", transcribe differently until orthography2ipa.cpp includes loom-ai-org/orthography2ipa.cpp#7. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
+A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package, byte for byte, except for the records in `tests/parity/expected_divergences.tsv`. Each of these records waits on a fix in orthography2ipa.cpp, and the list names the pull request of each fix. See [PARITY.md](PARITY.md) for the tests, the fixes and the list of the ported names.
 
-These modules are ported: the dialect registry, the dialect inventories, the text normalization rules and the number reader. The language detector, the code-switching rules and accent forcing are ported too. The phonemizer itself is not ported yet. Until it is, the respelling functions of accent forcing need a phonemizer as an argument.
+These modules are ported: the dialect registry, the dialect inventories, the text normalization rules, the number reader, the language detector, the code-switching rules, accent forcing and the phonemizer.
 
 ```cpp
+#include <tugaphone/lattice_core.hpp>
 #include <tugaphone/number_utils.hpp>
 #include <tugaphone/registry.hpp>
 #include <tugaphone/text_normalization.hpp>
@@ -14,6 +15,8 @@ tugaphone::text_normalization::normalize_orthography("D. Maria II chegou às 16:
 // "Dona Maria Segunda chegou às 16 horas."
 tugaphone::number_utils::normalize_numbers("Comprei 2 casas.");
 // "Comprei duas casas."
+tugaphone::lattice_core::phonemize("O gato dorme.", "pt-PT");
+// "o ˈɡatu ˈdɔɾmɨ"
 ```
 
 ## Dependencies
@@ -28,7 +31,13 @@ To use installed copies of the four ports, set `-DTUGAPHONE_USE_SYSTEM_DEPS=ON`.
 
 The library reads its data at run time. `cmake --install` puts the files in `<prefix>/share/tugaphone`, and the library looks there by default. To use another directory, set the environment variable `TUGAPHONE_DATA_DIR` or call `tugaphone::set_data_dir()` before the first call. The tugalex lexicon has its own data directory and its own variable, `TUGALEX_DATA_DIR`.
 
-The orthography2ipa data has its own variable, `ORTHOGRAPHY2IPA_DATA_DIR`, and its own call, `orthography2ipa::set_data_directory()`. The registry gets its list of lects from this data. If the directory is missing, the library does not stop: `list_dialects()` returns an empty list, and each code resolves to the default lect "pt-PT". The Python package does the same when its orthography2ipa data is missing. If `list_dialects()` is empty, check `ORTHOGRAPHY2IPA_DATA_DIR`.
+The bifonia homograph list has its own variable, `BIFONIA_DATA_DIR`. The orthography2ipa data has its own variable, `ORTHOGRAPHY2IPA_DATA_DIR`, and its own call, `orthography2ipa::set_data_directory()`. The registry gets its list of lects from this data. If the directory is missing, the library does not stop: `list_dialects()` returns an empty list, and each code resolves to the default lect "pt-PT". The Python package does the same when its orthography2ipa data is missing. If `list_dialects()` is empty, check `ORTHOGRAPHY2IPA_DATA_DIR`.
+
+The phonemizer writes the tugalex lexicon of each lect to a cache directory on the first call for that lect. The directory is `TUGAPHONE_LEXICON_DIR` if it is set, else `$XDG_CACHE_HOME/tugaphone/lexicon`, else `~/.cache/tugaphone/lexicon`. Each lexicon file has a stamp with the tugalex release, and a file with another stamp is written again.
+
+## Threads
+
+`phonemize()` can be called from more than one thread. orthography2ipa.cpp has no lock of its own, so the library holds one lock while it transcribes. `lattice_core::engine()` returns an engine that is shared. Do not call its methods while another thread calls into the library.
 
 ## Build
 

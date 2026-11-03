@@ -108,7 +108,7 @@ The goldens hold the default rule matches over every gold word. They hold the re
 
 `tugaphone.lattice_core` is ported in full, in `include/tugaphone/lattice_core.hpp`. The engine of a lect is an `orthography2ipa::G2P` from orthography2ipa.cpp. The C++ G2P has no `normalizer=` argument. Thus `engine()` registers the tugaphone normalizer as a normalize plugin named `tugaphone:<lect>` and names it in the plugin overrides of the engine. The Python G2P runs the normalize plugins of the spec and then the normalizer of the caller. No Portuguese spec declares a normalize plugin, so the order is the same. The normalizer applies `normalize_orthography`, then `normalize_numbers`, then the bifonia homograph marks.
 
-The engine registers the tugalex lexicon of the lect before it builds the G2P. It writes the lexicon TSV to `lexicon_cache_dir()`, with a stamp file that holds the tugalex release. `TUGAPHONE_LEXICON_DIR` sets the directory, and `set_lexicon_cache_dir()` replaces it, as a test replaces the Python module attribute. A contact mode other than "none" splits the text with `codeswitch::split_runs` and transcribes each contact token with `codeswitch::transcribe_contact`. `phonemize_runs()` is the loop that joins the runs. The goldens also call it with a fixed contact transcriber, which `tools/goldens/lattice_core.py` and `tests/parity/lattice_core.cpp` both define.
+The engine registers the tugalex lexicon of the lect before it builds the G2P. It writes the lexicon TSV to `lexicon_cache_dir()`, with a stamp file that holds the tugalex release, `tugalex::kPythonReference`. `TUGAPHONE_LEXICON_DIR` sets the directory, and `set_lexicon_cache_dir()` replaces it, as a test replaces the Python module attribute. The directory and the stamp path are the strings that `pathlib` gives, and a failure to write the cache raises the `OSError` subclass that Python raises for the same `errno`. A contact mode other than "none" splits the text with `codeswitch::split_runs` and transcribes each contact token with `codeswitch::transcribe_contact`. `phonemize_runs()` is the loop that joins the runs. The goldens also call it with a fixed contact transcriber, which `tools/goldens/lattice_core.py` and `tests/parity/lattice_core.cpp` both define.
 
 The goldens of the engine are these:
 
@@ -120,7 +120,9 @@ The goldens of the engine are these:
 | Mixed-language text, 4 lects, contact modes auto, es, fr and en | 1,152 |
 | `respell_word` and `force_accent` with the default phonemizer | 92 |
 | Lect codes, contact codes and the contact loop with a fixed transcriber | 139 |
-| The normalizer, relayout, the stamp path, the lexicon files and the constants | 5,046 |
+| A numeral next to a homograph, through the 41 lects and contact mode auto | 688 |
+| `engine(lect).sentence_lattice()` and `engine(lect).features()` through 7 lects | 434 |
+| The normalizer, relayout, the stamp path, the lexicon files, the cache directory and the constants | 5,126 |
 | Unicode probes and a seeded fuzz set | 1,614 |
 
 Some engine records wait on fixes in orthography2ipa.cpp. `tests/parity/expected_divergences.tsv` lists each one with the fix it waits on:
@@ -136,6 +138,13 @@ Some engine records wait on fixes in orthography2ipa.cpp. `tests/parity/expected
 | Two or three of these fixes together | 268 |
 
 With orthography2ipa.cpp PRs #1 and #5 to #18 merged into the submodule, every engine record matches.
+
+`engine(lect).features()` and `engine(lect).sentence_lattice()` read the normalizer only with loom-ai-org/orthography2ipa.cpp#26. Before that fix they skip it, so numbers stay digits, abbreviations stay short and homographs get no marks. The goldens call both methods, and the divergence list holds the records that wait on #26.
+
+Two cache cases do not match Python:
+
+- A stamp file that is not UTF-8. Python raises `UnicodeDecodeError` from each `phonemize` call until the file is deleted. The port reads the stamp as stale and writes the cache again. A port of the crash would make a broken cache permanent, and no caller can depend on it.
+- A cache TSV that was not written by the engine, with a current stamp. orthography2ipa.cpp `load_lexicon` folds the case of each key, keeps a trailing carriage return and reads everything after the first tab. Python keeps the key as it is and skips a line that does not have two fields. The engine writes neither case, so only a TSV changed by hand reaches it. The difference is in orthography2ipa.cpp.
 
 orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads, and CI runs it under ThreadSanitizer.
 
