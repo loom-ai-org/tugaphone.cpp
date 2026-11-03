@@ -131,9 +131,36 @@ def char_record(surface):
     return ["char", surface, common.call(lambda: char_props(tk.CharToken(surface, 0, g)))]
 
 
+def char_to_syllable_map_record(syllables):
+    """The private static helper, which the C++ header makes public."""
+    return ["char_to_syllable_map", syllables,
+            common.call(lambda: sorted(tk.WordToken._build_char_to_syllable_map(syllables).items()))]
+
+
+def parent_sentence_record(spec, text):
+    """Whether each grapheme and character reaches the sentence that holds it."""
+    def run():
+        s = tk.Sentence(text, dialect=dialect(spec))
+        return [[[g.parent_sentence is s, [c.parent_sentence is s for c in g.characters]] for g in w.graphemes]
+                for w in s.words]
+    return ["parent_sentence", spec, text, common.call(run)]
+
+
+def orphan_parent_sentence_record(surface, syllables):
+    """A WordToken, GraphemeToken and CharToken outside any sentence."""
+    def run():
+        w = tk.WordToken(surface, 0, syllables=list(syllables), dialect=dialect("EuropeanPortuguese"))
+        g = tk.GraphemeToken("a", 0, 0)
+        c = tk.CharToken("a", 0, g)
+        return [w.parent_sentence is None, [x.parent_sentence is None for x in w.graphemes],
+                [c2.parent_sentence is None for x in w.graphemes for c2 in x.characters],
+                g.parent_sentence is None, c.parent_sentence is None]
+    return ["orphan_parent_sentence", surface, syllables, common.call(run)]
+
+
 def functions(test_strings):
     out = [["PRONOUNCED_QU_GU_U", sorted(tk.PRONOUNCED_QU_GU_U)]]
-    words = test_strings + [w.upper() for w in tk.PRONOUNCED_QU_GU_U] + [
+    words = test_strings + [w.upper() for w in sorted(tk.PRONOUNCED_QU_GU_U)] + [
         "aguentou", "aguentamos", "frequentes", "frequentemente", "linguistas", "pinguins", "tranquila",
         "tranquilos", "equinas", "", "AGUENT", "frequentar", "arguiu", "argui", "Ubiquidades", "cinquentas"]
     for w in common.unique(words):
@@ -193,7 +220,10 @@ def corpora(repo):
               ("pássaro", ["pás", "sa", "ro"]), ("bairro", ["bair", "ro"]), ("casa", ["casa", "", "x"]),
               ("guerra", ["guer", "ra"]), ("que", ["que"]), ("aquele", ["a", "que", "le"]), ("ab", ["", "ab"]),
               ("chamo", ["cha", "mo"]), ("me", ["me"]), ("rr", ["r", "r"]), ("ssff", ["s", "sf", "f"]),
-              ("pé", ["p", "é", "z"]), ("Ação", ["A", "ção"]), ("muito", ["mui", "to"])]
+              ("pé", ["p", "é", "z"]), ("Ação", ["A", "ção"]), ("muito", ["mui", "to"]),
+              # Only caller syllables put m, p and c, ç or t in one archaic grapheme.
+              ("assumpção", ["assu", "mpção"]), ("peremptório", ["pere", "mptó", "rio"]),
+              ("sumptuoso", ["su", "mptuo", "so"]), ("assumpcão", ["assu", "mpcão"])]
     for spec in ("EuropeanPortuguese", "BrazilianPortuguese", "EuropeanPortuguese:xx-YY"):
         for surface, syl in shapes:
             for chunk in (None, 3):
@@ -209,5 +239,16 @@ def corpora(repo):
     # Diaeresis vowels are vowels only through NORMALIZED_VOWELS.
     umlaut = ["asüa", "osöa", "esäe", "isëo", "üsa", "ösar", "lingüiça", "agüentar", "Müller", "pÿsa", "tranqüilo",
               "freqüência", "rüa", "cïrco", "säo"]
-    out.append(("constructed", custom + [sentence_record(spec, w, "full") for w in umlaut for spec in NATIONAL]))
+    # Tetragraph and triphthong graphemes, a final o after a silent h, and the atonic "pra".
+    rare = ["Uruguai", "Paraguai", "quais", "iguais", "quaisquer", "saguão", "Soho", "Soho e Bahia", "pra",
+            "vou pra casa", "Pra quê?"]
+    for syllables in (["ca", "fé"], [], [""], ["", "a", ""], ["pão", "zi", "nho"], ["a\u0301", "gua"], ["😀x"]):
+        custom.append(char_to_syllable_map_record(syllables))
+    for spec in NATIONAL[:2]:
+        for text in ("O cão comeu o pão.", "chamo-me João", "", "Uruguai"):
+            custom.append(parent_sentence_record(spec, text))
+    for surface, syllables in (("casa", ["ca", "sa"]), ("pão", [])):
+        custom.append(orphan_parent_sentence_record(surface, syllables))
+    out.append(("constructed", custom + [sentence_record(spec, w, "full") for w in umlaut + rare
+                                         for spec in NATIONAL]))
     return out

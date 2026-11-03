@@ -69,7 +69,7 @@ The port keeps these defects of the reference release, because it is held at byt
 - `normalize_numbers` takes each word that Python `float()` accepts as a number, then calls `int()` on it. In strict mode, "o Inf. Henrique", "nan" and "Infinity" raise ValueError. Without strict mode, the word stays as it is.
 - `expand_letter_digit_codes` calls `int()` on the digits of a code, so a code with more than 4300 digits raises ValueError. `normalize_orthography` raises too.
 - The tokenizer gives a grapheme and a character an `idx_in_sentence` of `-1 + idx_in_word`. The value does not add the offset of the word in the sentence.
-- `is_grapheme_silent` compares the whole word prefix with `"m"` and tests `after[0] in "cç"` for the archaic silent p. The rule never fires: `assumpção` keeps its p, and the `mpt` words can never match.
+- `is_grapheme_silent` compares the prefix with `"m"` and tests `after[0] in "cç"` for the archaic silent p. A direct call with the prefix `"m"` returns true. `CharToken.is_silent` gives the whole word prefix, so the rule never fires for a character of a word: `assumpção` keeps its p. The `mpt` words never match, because t is not in `"cç"`.
 
 ## API inventory
 
@@ -262,11 +262,16 @@ The goldens use 13 dialects: the five national classes, the three city classes, 
 | Module functions and constants | 1,806 |
 | Test strings, token properties, national classes | 7,400 |
 | Test strings, IPA, the other eight dialects | 11,840 |
-| Gold-TSV words, IPA, 13 dialects | 59,033 |
+| The 4,541 unique words of the 10,093 gold-TSV rows, IPA, 13 dialects | 59,033 |
 | Every 20th gold-TSV word, token properties, national classes | 1,140 |
 | Unicode probes | 228 |
 | Seeded fuzz | 1,500 |
-| Tokens built directly, and words with diaeresis vowels | 212 |
+| Tokens built directly, parent links, diaeresis vowels and rare graphemes | 308 |
+| Total | 83,255 |
+
+The rare graphemes are the tetragraphs of "Uruguai" and "quais", the triphthong of "saguão", the final o after a silent h in "Soho", and the atonic "pra". Only caller syllables, such as `["assu", "mpção"]`, put an archaic `mpç` or `mpt` grapheme in a word, so the goldens build these words with their syllables.
+
+orthography2ipa.cpp keeps its spec cache in a global map with no lock. The tokenizer holds `detail::o2i_registry_mutex()` while it loads a spec, so threads can build sentences of different dialect codes at the same time. The test `threads_tokenizer` builds eight sentences in eight threads, and CI runs it under ThreadSanitizer.
 
 <!-- inventory:tokenizer -->
 | Python name | Kind | C++ name | Status |
