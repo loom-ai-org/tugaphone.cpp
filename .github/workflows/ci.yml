@@ -47,7 +47,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libboost-dev libicu-dev
       - name: Build with ASan and UBSan
         run: |
-          CXX=clang++ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DTUGAPHONE_LATTICE_CORE_STRIDE=20 \
+          CXX=clang++ cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DTUGAPHONE_LATTICE_CORE_STRIDE=20 -DTUGAPHONE_PACKAGE_STRIDE=20 \
             -DCMAKE_CXX_FLAGS="-O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -D_GLIBCXX_ASSERTIONS"
           cmake --build build -j
       - name: Test

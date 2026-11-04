@@ -1,18 +1,14 @@
 #include "tugaphone/lattice_core.hpp"
 
 #include <algorithm>
-#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <map>
 #include <memory>
 #include <mutex>
-#include <optional>
 #include <set>
 
-#include <fcntl.h>
 #include <pwd.h>
 #include <unistd.h>
 
@@ -22,6 +18,7 @@
 
 #include "detail.hpp"
 #include "o2i_registry.hpp"
+#include "pyio.hpp"
 #include "tugaphone/dialects.hpp"
 #include "tugaphone/number_utils.hpp"
 #include "tugaphone/registry.hpp"
@@ -101,22 +98,6 @@ std::string with_suffix(std::string_view path, const std::string& suffix) {
     return p.substr(0, name_start) + (has_suffix ? name.substr(0, dot) : name) + suffix;
 }
 
-// The OSError subclass that Python raises for an errno value.
-[[noreturn]] void raise_os_error(int err, const std::string& path) {
-    const char* type = "OSError";
-    switch (err) {
-        case EPERM:
-        case EACCES: type = "PermissionError"; break;
-        case ENOENT: type = "FileNotFoundError"; break;
-        case EEXIST: type = "FileExistsError"; break;
-        case EISDIR: type = "IsADirectoryError"; break;
-        case ENOTDIR: type = "NotADirectoryError"; break;
-        case EINTR: type = "InterruptedError"; break;
-        default: break;
-    }
-    throw Error(type, std::string(std::strerror(err)) + ": '" + path + "'");
-}
-
 std::string default_lexicon_cache_dir() {
     if (const char* dir = std::getenv("TUGAPHONE_LEXICON_DIR")) return pure_path(dir);
     const char* xdg = std::getenv("XDG_CACHE_HOME");
@@ -152,43 +133,6 @@ public:
 private:
     std::string lect_;
 };
-
-void write_text(const std::string& path, const std::string& text) {
-    const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
-    if (fd < 0) raise_os_error(errno, path);
-    size_t done = 0;
-    while (done < text.size()) {
-        const ssize_t n = ::write(fd, text.data() + done, text.size() - done);
-        if (n < 0 && errno == EINTR) continue;
-        if (n < 0) {
-            const int err = errno;
-            ::close(fd);
-            raise_os_error(err, path);
-        }
-        done += static_cast<size_t>(n);
-    }
-    if (::close(fd) != 0) raise_os_error(errno, path);
-}
-
-// The bytes of a file, or nullopt when it cannot be opened or read.
-std::optional<std::string> read_text(const std::string& path) {
-    const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return std::nullopt;
-    std::string out;
-    char buf[4096];
-    while (true) {
-        const ssize_t n = ::read(fd, buf, sizeof buf);
-        if (n < 0 && errno == EINTR) continue;
-        if (n < 0) {
-            ::close(fd);
-            return std::nullopt;
-        }
-        if (n == 0) break;
-        out.append(buf, static_cast<size_t>(n));
-    }
-    ::close(fd);
-    return out;
-}
 
 }  // namespace
 
@@ -235,35 +179,36 @@ void write_lexicon(std::string_view region, const std::string& path) {
     for (const auto& item : *ipa_map) entries.push_back(&item);
     // sorted(ipa_map): UTF-8 byte order is code-point order.
     std::sort(entries.begin(), entries.end(), [](const auto* a, const auto* b) { return a->first < b->first; });
-    const std::string target = pure_path(path);
+    // pathlib: path.parent.mkdir(parents=True, exist_ok=True), then a
+    // ".tsv.tmp" sibling replaced onto the path. Errors name pathlib's
+    // normalised paths.
+    const std::string target = detail::pyio::pure_path(path);
     const size_t slash = target.rfind('/');
-    if (slash != std::string::npos && slash > 0) {
-        // Path.parent.mkdir(parents=True, exist_ok=True)
-        const std::string parent = target.substr(0, slash);
-        std::error_code ec;
-        fs::create_directories(parent, ec);
-        if (ec) raise_os_error(ec.value(), parent);
-        if (!fs::is_directory(parent)) raise_os_error(EEXIST, parent);
-    }
+    detail::pyio::mkdir_parents(slash == std::string::npos ? "." : slash == 0 ? "/" : target.substr(0, slash));
     const std::string tmp = with_suffix(target, ".tsv.tmp");
     {
         std::string text;
         for (const auto* e : entries) text += e->first + "\t" + relayout(e->second) + "\n";
-        write_text(tmp, text);
+        detail::pyio::write_text(tmp, text);
     }
-    if (std::rename(tmp.c_str(), target.c_str()) != 0) raise_os_error(errno, tmp);
-    write_text(stamp_path(target), tugalex_version());
+    detail::pyio::replace(tmp, target);
+    detail::pyio::write_text(stamp_path(target), tugalex_version());
 }
 
 bool is_stale(const std::string& path) {
+    const std::string target = detail::pyio::pure_path(path);
+    if (!detail::pyio::path_exists(target)) return true;
     std::error_code ec;
-    if (!fs::exists(path, ec) || fs::file_size(path, ec) == 0) return true;
-    // An unreadable stamp is stale, as Python's OSError branch. Python decodes
-    // the stamp strictly and lets a UnicodeDecodeError through.
-    const auto stamp = read_text(stamp_path(path));
-    if (!stamp) return true;
-    if (auto error = detail::utf8_decode_error(*stamp)) throw Error("UnicodeDecodeError", *error);
-    return s8(detail::strip_ws(u(*stamp))) != tugalex_version();
+    if (fs::file_size(target, ec) == 0) return true;
+    std::string stamp;
+    try {
+        stamp = detail::pyio::read_text(stamp_path(target));
+    } catch (const Error& e) {
+        // except OSError: a stamp that cannot be read is stale.
+        if (e.python_type() == "UnicodeDecodeError") throw;
+        return true;
+    }
+    return s8(detail::strip_ws(u(stamp))) != tugalex_version();
 }
 
 namespace {

@@ -92,6 +92,11 @@ add_library(tugaphone
     src/accent.cpp
     src/lattice_core.cpp
     src/tokenizer.cpp
+    src/tugaphone.cpp
+    src/plugin.cpp
+    src/pyio.cpp
+    src/argparse.cpp
+    src/cli.cpp
 )
 add_library(tugaphone::tugaphone ALIAS tugaphone)
 target_include_directories(tugaphone
@@ -101,9 +106,11 @@ target_include_directories(tugaphone
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+# plugin.hpp derives from orthography2ipa::SyllabifierPlugin, so orthography2ipa
+# is part of the public interface.
 target_link_libraries(tugaphone
-    PUBLIC tugalex::tugalex
-    PRIVATE orthography2ipa::orthography2ipa bifonia::bifonia silabificador::silabificador
+    PUBLIC tugalex::tugalex orthography2ipa::orthography2ipa
+    PRIVATE bifonia::bifonia silabificador::silabificador
     PRIVATE ZLIB::ZLIB)
 target_compile_definitions(tugaphone PRIVATE TUGAPHONE_DEFAULT_DATA_DIR="${_tugaphone_default_data}")
 set_target_properties(tugaphone PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -116,7 +123,28 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(tugaphone PRIVATE -ffp-contract=off)
 endif()
 
-install(TARGETS tugaphone EXPORT tugaphoneTargets
+# The command line, python -m tugaphone.
+add_executable(tugaphone_cli src/main.cpp)
+set_target_properties(tugaphone_cli PROPERTIES OUTPUT_NAME tugaphone)
+target_include_directories(tugaphone_cli PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(tugaphone_cli PRIVATE tugaphone)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(tugaphone_cli PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# scripts/benchmark.py of the Python repository: a tool of this source tree,
+# not installed.
+add_library(tugaphone_benchmark_core STATIC src/benchmark.cpp)
+target_include_directories(tugaphone_benchmark_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(tugaphone_benchmark_core PUBLIC tugaphone)
+add_executable(tugaphone_benchmark src/benchmark_main.cpp)
+target_link_libraries(tugaphone_benchmark PRIVATE tugaphone_benchmark_core)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(tugaphone_benchmark_core PRIVATE -Wall -Wextra -Wpedantic -ffp-contract=off)
+    target_compile_options(tugaphone_benchmark PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+install(TARGETS tugaphone tugaphone_cli EXPORT tugaphoneTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -163,13 +191,17 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/codeswitch.cpp
         tests/parity/accent.cpp
         tests/parity/lattice_core.cpp
+        tests/parity/package.cpp
+        tests/parity/plugin.cpp
+        tests/parity/cli.cpp
+        tests/parity/benchmark.cpp
         tests/parity/tokenizer.cpp
     )
     target_include_directories(tugaphone_parity PRIVATE tests)
     # The phase-internal headers under src/ expose the private functions the goldens call.
     target_include_directories(tugaphone_parity PRIVATE src)
     find_package(Threads REQUIRED)
-    target_link_libraries(tugaphone_parity PRIVATE tugaphone orthography2ipa::orthography2ipa ZLIB::ZLIB Threads::Threads)
+    target_link_libraries(tugaphone_parity PRIVATE tugaphone tugaphone_benchmark_core orthography2ipa::orthography2ipa ZLIB::ZLIB Threads::Threads)
     # One parity test per module, so that ctest -j runs the modules in parallel
     # and the timeout applies to each module. The engine writes the tugalex
     # lexicon TSVs to its cache, one cache per test.
@@ -178,9 +210,14 @@ if(TUGAPHONE_BUILD_TESTS)
     string(REGEX MATCHALL "X\\([a-z_]+\\)" _parity_modules "${_parity_header}")
     list(TRANSFORM _parity_modules REPLACE "X\\(([a-z_]+)\\)" "\\1")
     # The engine goldens take more than an hour under the sanitizers, so a
-    # sanitizer build can check every n-th engine record.
+    # sanitizer build can check every n-th engine and package record.
     set(TUGAPHONE_LATTICE_CORE_STRIDE 1 CACHE STRING "Check every n-th lattice_core golden record")
+    set(TUGAPHONE_PACKAGE_STRIDE 1 CACHE STRING "Check every n-th package golden record")
+    set(_parity_tests)
     foreach(_module IN LISTS _parity_modules)
+        if(_module STREQUAL "package")
+            continue()
+        endif()
         set(_stride 1)
         if(_module STREQUAL "lattice_core")
             set(_stride ${TUGAPHONE_LATTICE_CORE_STRIDE})
@@ -188,9 +225,28 @@ if(TUGAPHONE_BUILD_TESTS)
         add_test(NAME parity_${_module} COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
                  --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv
                  --stride ${_stride} ${_module})
-        set_tests_properties(parity_${_module} PROPERTIES ENVIRONMENT
-            "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-${_module}")
+        list(APPEND _parity_tests parity_${_module})
     endforeach()
+    # The package records run the whole engine five times each, so eight
+    # shard tests share them. With a stride s, shard k checks the records whose
+    # index modulo 8s is k: every s-th record in all.
+    math(EXPR _package_count "8 * ${TUGAPHONE_PACKAGE_STRIDE}")
+    foreach(_k RANGE 7)
+        add_test(NAME parity_package_${_k} COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
+                 --divergences ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/expected_divergences.tsv
+                 --shard ${_k}/${_package_count} package)
+        list(APPEND _parity_tests parity_package_${_k})
+    endforeach()
+    foreach(_test IN LISTS _parity_tests)
+        set_tests_properties(${_test} PROPERTIES ENVIRONMENT
+            "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-${_test}")
+    endforeach()
+    # The command-line records run the executable in the source tree, and the
+    # benchmark records read the gold fixtures there.
+    set_property(TEST parity_cli APPEND PROPERTY ENVIRONMENT "TUGAPHONE_CLI=$<TARGET_FILE:tugaphone_cli>"
+                 "TUGAPHONE_CLI_CWD=${CMAKE_CURRENT_SOURCE_DIR}")
+    set_property(TEST parity_benchmark APPEND PROPERTY ENVIRONMENT
+                 "TUGAPHONE_BENCHMARK_ROOT=${CMAKE_CURRENT_SOURCE_DIR}")
     # The accent records include 100,000 code-point subjects for the regular
     # expression engine; a 1 MB thread stack shows that it does not recurse
     # per character. 1 MB is the stack that PARITY.md states for the engine:
@@ -211,6 +267,19 @@ if(TUGAPHONE_BUILD_TESTS)
     target_link_libraries(tugaphone_threads_tokenizer PRIVATE tugaphone Threads::Threads)
     add_test(NAME threads_tokenizer COMMAND tugaphone_threads_tokenizer)
     set_tests_properties(threads_tokenizer PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+
+    add_executable(tugaphone_threads_package tests/threads_package.cpp)
+    target_include_directories(tugaphone_threads_package PRIVATE src)
+    target_link_libraries(tugaphone_threads_package PRIVATE tugaphone Threads::Threads)
+    add_test(NAME threads_package COMMAND tugaphone_threads_package)
+    set_tests_properties(threads_package PROPERTIES ENVIRONMENT
+        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-threads-package")
+
+    add_test(NAME cli_process COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_process.sh
+             $<TARGET_FILE:tugaphone_cli> $<TARGET_FILE:tugaphone_benchmark> ${CMAKE_CURRENT_SOURCE_DIR}
+             ${CMAKE_CURRENT_BINARY_DIR}/cli-process)
+    set_tests_properties(cli_process PROPERTIES ENVIRONMENT
+        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-cli-process")
 
     add_executable(tugaphone_threads_tokenizer_codeswitch tests/threads_tokenizer_codeswitch.cpp)
     target_link_libraries(tugaphone_threads_tokenizer_codeswitch PRIVATE tugaphone Threads::Threads)

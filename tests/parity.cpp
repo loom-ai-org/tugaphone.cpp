@@ -6,6 +6,10 @@
 // a dependency fix lands. A listed record that mismatches is counted apart;
 // a listed record that matches, or that is not in the goldens, fails the run,
 // so that the list shrinks when the fix lands.
+//
+// --shard k/n checks the records whose index modulo n is k, so that ctest can
+// run the large modules in parallel processes. --mismatches <file> writes each
+// golden line that mismatches, in full, to the file.
 #include <algorithm>
 #include <exception>
 #include <fstream>
@@ -47,21 +51,29 @@ Divergences read_divergences(const std::string& path) {
     return out;
 }
 
+struct Shard {
+    long index = 0, count = 1;
+};
+
 Tally run(const std::string& dir, const std::string& module, std::string (*record)(const json_line::Value&),
-          const Divergences& divergences, long shown, long stride) {
+          const Divergences& divergences, long shown, const Shard& shard, std::ostream* mismatches) {
     const std::string path = dir + "/" + module + ".jsonl.gz";
     const auto lines = json_line::read_gz_lines(path);
     Tally t;
     if (lines.empty()) throw std::runtime_error("empty golden file " + path);
     t.expected = json_line::header_count(lines[0]);
     std::map<std::string, long> by_function;
+    // The listed lines the whole file holds: a listed divergence is stale only
+    // when the file lacks it, whichever shard runs.
     std::set<std::string> seen;
+    for (const auto& [key, fix] : divergences)
+        if (key.first == module) seen.insert(key.second);
+    std::set<std::string> present;
+    for (size_t i = 1; i < lines.size(); ++i)
+        if (seen.count(lines[i])) present.insert(lines[i]);
     for (size_t i = 1; i < lines.size(); ++i) {
         ++t.read;
-        if (static_cast<long>(i - 1) % stride != 0) {
-            seen.insert(lines[i]);
-            continue;
-        }
+        if (static_cast<long>(i - 1) % shard.count != shard.index) continue;
         std::string got;
         json_line::Value v;
         try {
@@ -73,7 +85,6 @@ Tally run(const std::string& dir, const std::string& module, std::string (*recor
         ++t.checked;
         const auto listed = divergences.find({module, lines[i]});
         if (listed != divergences.end()) {
-            seen.insert(lines[i]);
             if (got == lines[i]) {
                 ++t.stale;
                 std::cerr << "LISTED DIVERGENCE NOW MATCHES " << module << " (" << listed->second
@@ -86,6 +97,7 @@ Tally run(const std::string& dir, const std::string& module, std::string (*recor
             continue;
         }
         if (got == lines[i]) continue;
+        if (mismatches != nullptr) *mismatches << lines[i] << "\n";
         ++by_function[v.size() ? v[0].str : "?"];
         if (++t.mismatches <= shown) {
             std::cerr << "MISMATCH " << module << "\n  python: " << lines[i].substr(0, 3000)
@@ -93,7 +105,7 @@ Tally run(const std::string& dir, const std::string& module, std::string (*recor
         }
     }
     for (const auto& [key, fix] : divergences) {
-        if (key.first == module && !seen.count(key.second)) {
+        if (key.first == module && !present.count(key.second)) {
             ++t.stale;
             std::cerr << "LISTED DIVERGENCE NOT IN THE GOLDENS " << module << " (" << fix << ")\n  python: "
                       << key.second.substr(0, 3000) << "\n";
@@ -117,7 +129,8 @@ struct Options {
     std::vector<std::string> modules;  // empty: every module
     Divergences divergences;
     long shown = 10;  // mismatches printed per module
-    long stride = 1;  // check every stride-th record
+    Shard shard;
+    std::string mismatches;  // empty: do not write them
 };
 
 int run_all(const Options& opt) {
@@ -129,10 +142,16 @@ int run_all(const Options& opt) {
     auto selected = [&](const std::string& name) {
         return opt.modules.empty() || std::find(opt.modules.begin(), opt.modules.end(), name) != opt.modules.end();
     };
+    std::ofstream mismatch_file;
+    if (!opt.mismatches.empty()) {
+        mismatch_file.open(opt.mismatches);
+        if (!mismatch_file) throw std::runtime_error("cannot write " + opt.mismatches);
+    }
+    std::ostream* mismatches = opt.mismatches.empty() ? nullptr : &mismatch_file;
     Tally total;
 #define TUGAPHONE_PARITY_RUN(name)                                                  \
     if (selected(#name)) {                                                          \
-        const Tally t = run(opt.dir, #name, parity::record_##name, opt.divergences, opt.shown, opt.stride); \
+        const Tally t = run(opt.dir, #name, parity::record_##name, opt.divergences, opt.shown, opt.shard, mismatches); \
         total.expected += t.expected;                                               \
         total.read += t.read;                                                       \
         total.checked += t.checked;                                                 \
@@ -158,13 +177,15 @@ int run_guarded(const Options& opt) {
 
 }  // namespace
 
-// usage: tugaphone_parity <goldens dir> [--divergences <file>] [--stack-kb <n>] [--show <n>] [--stride <n>]
-//                          [module ...]
+// usage: tugaphone_parity <goldens dir> [--divergences <file>] [--stack-kb <n>] [--show <n>] [--shard <k>/<n>]
+//        [--stride <n>] [--mismatches <file>] [module ...]
 // --stack-kb runs the records on a thread with that stack size, to show that
 // the matchers do not need a stack that grows with the subject. --show sets
 // how many mismatches each module prints (10 by default). --stride <n> checks
-// only every n-th record, for the slow sanitizer builds; a listed divergence of
-// a record that is not checked is neither counted nor stale.
+// only every n-th record, for the slow sanitizer builds: it is --shard 0/<n>.
+// A listed divergence of a record that is not checked is neither counted nor
+// stale. The run reads every record and fails if the file holds fewer than
+// its header count.
 int main(int argc, char** argv) {
     Options opt;
     size_t stack_kb = 0;
@@ -172,11 +193,27 @@ int main(int argc, char** argv) {
     try {
         for (int i = 1; i < argc; ++i) {
             const std::string a = argv[i];
-            if ((a == "--divergences" || a == "--stack-kb" || a == "--show" || a == "--stride") && i + 1 < argc) {
-                if (a == "--divergences") opt.divergences = read_divergences(argv[++i]);
-                else if (a == "--stack-kb") stack_kb = std::stoul(argv[++i]);
-                else if (a == "--show") opt.shown = std::stol(argv[++i]);
-                else opt.stride = std::max(1L, std::stol(argv[++i]));
+            if ((a == "--divergences" || a == "--stack-kb" || a == "--show" || a == "--shard" ||
+                 a == "--stride" || a == "--mismatches") &&
+                i + 1 < argc) {
+                if (a == "--divergences") {
+                    opt.divergences = read_divergences(argv[++i]);
+                } else if (a == "--mismatches") {
+                    opt.mismatches = argv[++i];
+                } else if (a == "--stack-kb") {
+                    stack_kb = std::stoul(argv[++i]);
+                } else if (a == "--show") {
+                    opt.shown = std::stol(argv[++i]);
+                } else if (a == "--stride") {
+                    opt.shard = {0, std::max(1L, std::stol(argv[++i]))};
+                } else {
+                    const std::string spec = argv[++i];
+                    const size_t slash = spec.find('/');
+                    if (slash == std::string::npos) throw std::runtime_error("--shard takes k/n");
+                    opt.shard = {std::stol(spec.substr(0, slash)), std::stol(spec.substr(slash + 1))};
+                    if (opt.shard.count < 1 || opt.shard.index < 0 || opt.shard.index >= opt.shard.count)
+                        throw std::runtime_error("--shard takes k/n with 0 <= k < n");
+                }
             } else {
                 rest.push_back(a);
             }
@@ -187,7 +224,7 @@ int main(int argc, char** argv) {
     }
     if (rest.empty()) {
         std::cerr << "usage: tugaphone_parity <goldens dir> [--divergences <file>] [--stack-kb <n>] [--show <n>] "
-                     "[--stride <n>] [module ...]\n";
+                     "[--shard <k>/<n>] [--stride <n>] [--mismatches <file>] [module ...]\n";
         return 2;
     }
     opt.dir = rest[0];
