@@ -4,13 +4,16 @@
 # specs must all come from the prefix of the command line:
 #   1. this build, run by absolute path and by bare name through PATH;
 #   2. a static build with a two-level CMAKE_INSTALL_LIBDIR, with the data of
-#      another install in <prefix>/../share/tugaphone. That copy lists
-#      "cap XII" as a letter expression, so a command line that reads it
-#      leaves the numeral as a letter name;
+#      another install in <prefix>/../share/tugaphone;
 #   3. a shared build with a two-level CMAKE_INSTALL_LIBDIR, the command line
 #      copied outside the prefix.
-# The expected line is the output of the Python tugaphone of PARITY.md for the
-# same arguments.
+# Each prefix gets its own letter_expressions.json edited to list "cap XII" as
+# a letter expression, so the command line that reads it leaves the numeral as
+# a letter name. Every other copy of the data stays unedited: the source tree,
+# the decoy of case 2 and the configured prefix of cases 2 and 3. A command
+# line that reads any of them prints the numeral, and the test fails. The
+# expected lines are the output of the Python tugaphone of PARITY.md for the
+# same arguments and data.
 if(PREFIX STREQUAL INSTALL_PREFIX)
     message(FATAL_ERROR "PREFIX must differ from CMAKE_INSTALL_PREFIX: ${PREFIX}")
 endif()
@@ -24,7 +27,17 @@ function(run)
     endif()
 endfunction()
 
-set(expected "ˈtɛɲu ˈvĩt i ˈtɾez ˈɐnuʃ sɨˈɲoɾ ˈsiɫvɐ ˈli o ˈkap ˈdoz\n")
+set(expected "ˈtɛɲu ˈvĩt i ˈtɾez ˈɐnuʃ sɨˈɲoɾ ˈsiɫvɐ ˈli o ˈkap ʃiˈi\n")
+
+# Lists "cap XII" as a letter expression in the data directory *dir*.
+function(edit_expressions dir)
+    file(READ "${dir}/letter_expressions.json" expressions)
+    string(REPLACE "\"expressions\": {" "\"expressions\": {\"cap XII\": \"\"," edited "${expressions}")
+    if(edited STREQUAL expressions)
+        message(FATAL_ERROR "${dir}/letter_expressions.json has no expressions object")
+    endif()
+    file(WRITE "${dir}/letter_expressions.json" "${edited}")
+endfunction()
 # The command line to run, then the variables to add to its environment.
 function(phonemize program)
     file(REMOVE_RECURSE "${PREFIX}-lexicon-cache")
@@ -40,6 +53,7 @@ function(phonemize program)
 endfunction()
 
 run("${CMAKE_COMMAND}" --install "${BUILD_DIR}" --prefix "${PREFIX}")
+edit_expressions("${PREFIX}/${DATADIR}/tugaphone")
 phonemize("${PREFIX}/${BINDIR}/tugaphone" "PATH=${PREFIX}/${BINDIR}:$ENV{PATH}")
 # The bare name goes through PATH, from a directory that holds no file of
 # that name, as a shell does.
@@ -47,30 +61,29 @@ phonemize(tugaphone "PATH=${PREFIX}/${BINDIR}:$ENV{PATH}")
 
 set(layouts "${PREFIX}-layouts")
 set(libdir "lib/x86_64-linux-gnu")
-# The configured prefix is never created, so a library that falls back to it
-# finds no data.
+cmake_host_system_information(RESULT jobs QUERY NUMBER_OF_LOGICAL_CORES)
+if(DEFINED ENV{CMAKE_BUILD_PARALLEL_LEVEL})
+    set(jobs "$ENV{CMAKE_BUILD_PARALLEL_LEVEL}")
+endif()
 foreach(shared OFF ON)
     set(build "${layouts}/build-${shared}")
-    run("${CMAKE_COMMAND}" -S "${SOURCE_DIR}" -B "${build}" -G "${GENERATOR}" -DTUGAPHONE_BUILD_TESTS=OFF
-        "-DBUILD_SHARED_LIBS=${shared}" "-DCMAKE_INSTALL_LIBDIR=${libdir}" "-DCMAKE_INSTALL_PREFIX=${layouts}/configured"
-        "-DCMAKE_CXX_COMPILER=${CXX_COMPILER}" "-DCMAKE_CXX_FLAGS=${CXX_FLAGS}" "-DCMAKE_BUILD_TYPE=${BUILD_TYPE}"
-        "-DZLIB_LIBRARY=${ZLIB_LIBRARY}" "-DZLIB_INCLUDE_DIR=${ZLIB_INCLUDE_DIR}")
-    run("${CMAKE_COMMAND}" --build "${build}")
+    run("${CMAKE_COMMAND}" -C "${INITIAL_CACHE}" -S "${SOURCE_DIR}" -B "${build}" -G "${GENERATOR}"
+        -DTUGAPHONE_BUILD_TESTS=OFF "-DBUILD_SHARED_LIBS=${shared}" "-DCMAKE_INSTALL_LIBDIR=${libdir}"
+        "-DCMAKE_INSTALL_PREFIX=${layouts}/configured")
+    run("${CMAKE_COMMAND}" --build "${build}" --parallel "${jobs}")
 endforeach()
+# The configured prefix holds unedited data, so a library that falls back to
+# it prints the numeral.
+run("${CMAKE_COMMAND}" --install "${layouts}/build-OFF" --prefix "${layouts}/configured")
 
 set(static "${layouts}/static/usr/local")
 run("${CMAKE_COMMAND}" --install "${layouts}/build-OFF" --prefix "${static}")
-set(decoy "${layouts}/static/usr/${DATADIR}/tugaphone")
 file(COPY "${static}/${DATADIR}/tugaphone" DESTINATION "${layouts}/static/usr/${DATADIR}")
-file(READ "${decoy}/letter_expressions.json" expressions)
-string(REPLACE "\"expressions\": {" "\"expressions\": {\"cap XII\": \"\"," decoy_expressions "${expressions}")
-if(decoy_expressions STREQUAL expressions)
-    message(FATAL_ERROR "${decoy}/letter_expressions.json has no expressions object")
-endif()
-file(WRITE "${decoy}/letter_expressions.json" "${decoy_expressions}")
+edit_expressions("${static}/${DATADIR}/tugaphone")
 phonemize("${static}/${BINDIR}/tugaphone")
 
 set(shared "${layouts}/shared")
 run("${CMAKE_COMMAND}" --install "${layouts}/build-ON" --prefix "${shared}")
+edit_expressions("${shared}/${DATADIR}/tugaphone")
 file(COPY "${shared}/${BINDIR}/tugaphone" DESTINATION "${layouts}/outside")
 phonemize("${layouts}/outside/tugaphone" "LD_LIBRARY_PATH=${shared}/${libdir}" "DYLD_LIBRARY_PATH=${shared}/${libdir}")

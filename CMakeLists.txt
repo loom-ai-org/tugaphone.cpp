@@ -293,14 +293,31 @@ if(TUGAPHONE_BUILD_TESTS)
     set_tests_properties(threads_tokenizer_codeswitch PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     # Installs into prefixes that are not CMAKE_INSTALL_PREFIX and runs the
-    # installed command line with none of the data variables set.
+    # installed command line with none of the data variables set. The builds
+    # the test makes start from the settings of this build, through an initial
+    # cache, so that they find the same dependencies the same way.
+    set(_relocated_cache "${CMAKE_CURRENT_BINARY_DIR}/relocated-install-cache.cmake")
+    set(_relocated_settings "")
+    foreach(_name CMAKE_CXX_COMPILER CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS
+                  CMAKE_BUILD_TYPE CMAKE_INSTALL_BINDIR CMAKE_INSTALL_DATADIR CMAKE_PREFIX_PATH TUGAPHONE_USE_SYSTEM_DEPS ZLIB_LIBRARY ZLIB_INCLUDE_DIR
+                  Boost_INCLUDE_DIR Boost_DIR BOOST_ROOT BOOST_INCLUDEDIR ICU_ROOT ICU_INCLUDE_DIR)
+        if(DEFINED ${_name} AND NOT "${${_name}}" MATCHES "-NOTFOUND$")
+            string(APPEND _relocated_settings "set(${_name} [==[${${_name}}]==] CACHE STRING \"\")\n")
+        endif()
+    endforeach()
+    if(TUGAPHONE_USE_SYSTEM_DEPS)
+        foreach(_dep silabificador tugalex bifonia orthography2ipa)
+            if(${_dep}_DIR)
+                string(APPEND _relocated_settings "set(${_dep}_DIR [==[${${_dep}_DIR}]==] CACHE PATH \"\")\n")
+            endif()
+        endforeach()
+    endif()
+    file(WRITE "${_relocated_cache}" "${_relocated_settings}")
     add_test(NAME relocated_install
              COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_CURRENT_BINARY_DIR} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
                      -DPREFIX=${CMAKE_CURRENT_BINARY_DIR}/relocated-install -DINSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
                      -DBINDIR=${CMAKE_INSTALL_BINDIR} -DDATADIR=${CMAKE_INSTALL_DATADIR} "-DGENERATOR=${CMAKE_GENERATOR}"
-                     -DCXX_COMPILER=${CMAKE_CXX_COMPILER} "-DCXX_FLAGS=${CMAKE_CXX_FLAGS}"
-                     -DBUILD_TYPE=${CMAKE_BUILD_TYPE} -DZLIB_LIBRARY=${ZLIB_LIBRARY}
-                     -DZLIB_INCLUDE_DIR=${ZLIB_INCLUDE_DIR}
+                     -DINITIAL_CACHE=${_relocated_cache}
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/relocated_install.cmake)
     # The test builds the library twice more, a static and a shared build.
     set_tests_properties(relocated_install PROPERTIES TIMEOUT 3600)
