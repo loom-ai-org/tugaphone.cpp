@@ -292,13 +292,42 @@ if(TUGAPHONE_BUILD_TESTS)
     add_test(NAME threads_tokenizer_codeswitch COMMAND tugaphone_threads_tokenizer_codeswitch)
     set_tests_properties(threads_tokenizer_codeswitch PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
-    # Installs into a prefix that is not CMAKE_INSTALL_PREFIX and runs the
-    # installed command line with none of the data variables set.
+    # Installs into prefixes that are not CMAKE_INSTALL_PREFIX and runs the
+    # installed command line with none of the data variables set. The builds
+    # the test makes start from the settings of this build, through an initial
+    # cache, so that they find the same dependencies the same way.
+    set(_relocated_cache "${CMAKE_CURRENT_BINARY_DIR}/relocated-install-cache.cmake")
+    set(_relocated_settings "")
+    foreach(_name CMAKE_CXX_COMPILER CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS
+                  CMAKE_BUILD_TYPE CMAKE_INSTALL_BINDIR CMAKE_INSTALL_DATADIR CMAKE_PREFIX_PATH
+                  TUGAPHONE_USE_SYSTEM_DEPS ZLIB_LIBRARY_RELEASE ZLIB_LIBRARY_DEBUG ZLIB_INCLUDE_DIR
+                  Boost_INCLUDE_DIR Boost_DIR BOOST_ROOT BOOST_INCLUDEDIR ICU_ROOT ICU_INCLUDE_DIR
+                  ICU_UC_LIBRARY_RELEASE ICU_UC_LIBRARY_DEBUG ICU_DATA_LIBRARY_RELEASE ICU_DATA_LIBRARY_DEBUG)
+        if(DEFINED ${_name} AND NOT "${${_name}}" MATCHES "-NOTFOUND$")
+            string(APPEND _relocated_settings "set(${_name} [==[${${_name}}]==] CACHE STRING \"\")\n")
+        endif()
+    endforeach()
+    # A zlib library given on the command line skips the search that sets the
+    # _RELEASE and _DEBUG entries.
+    if(DEFINED CACHE{ZLIB_LIBRARY})
+        string(APPEND _relocated_settings "set(ZLIB_LIBRARY [==[$CACHE{ZLIB_LIBRARY}]==] CACHE STRING \"\")\n")
+    endif()
+    if(TUGAPHONE_USE_SYSTEM_DEPS)
+        foreach(_dep silabificador tugalex bifonia orthography2ipa)
+            if(${_dep}_DIR)
+                string(APPEND _relocated_settings "set(${_dep}_DIR [==[${${_dep}_DIR}]==] CACHE PATH \"\")\n")
+            endif()
+        endforeach()
+    endif()
+    file(WRITE "${_relocated_cache}" "${_relocated_settings}")
     add_test(NAME relocated_install
-             COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+             COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_CURRENT_BINARY_DIR} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
                      -DPREFIX=${CMAKE_CURRENT_BINARY_DIR}/relocated-install -DINSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-                     -DBINDIR=${CMAKE_INSTALL_BINDIR}
+                     -DBINDIR=${CMAKE_INSTALL_BINDIR} -DDATADIR=${CMAKE_INSTALL_DATADIR} "-DGENERATOR=${CMAKE_GENERATOR}"
+                     -DINITIAL_CACHE=${_relocated_cache}
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/relocated_install.cmake)
+    # The test builds the library twice more, a static and a shared build.
+    set_tests_properties(relocated_install PROPERTIES TIMEOUT 3600)
 
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)
