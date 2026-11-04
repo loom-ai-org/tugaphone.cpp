@@ -292,13 +292,18 @@ if(TUGAPHONE_BUILD_TESTS)
     add_test(NAME threads_tokenizer_codeswitch COMMAND tugaphone_threads_tokenizer_codeswitch)
     set_tests_properties(threads_tokenizer_codeswitch PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
-    # Installs into a prefix that is not CMAKE_INSTALL_PREFIX and runs the
+    # Installs into prefixes that are not CMAKE_INSTALL_PREFIX and runs the
     # installed command line with none of the data variables set.
     add_test(NAME relocated_install
-             COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+             COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_CURRENT_BINARY_DIR} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
                      -DPREFIX=${CMAKE_CURRENT_BINARY_DIR}/relocated-install -DINSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
-                     -DBINDIR=${CMAKE_INSTALL_BINDIR}
+                     -DBINDIR=${CMAKE_INSTALL_BINDIR} -DDATADIR=${CMAKE_INSTALL_DATADIR} "-DGENERATOR=${CMAKE_GENERATOR}"
+                     -DCXX_COMPILER=${CMAKE_CXX_COMPILER} "-DCXX_FLAGS=${CMAKE_CXX_FLAGS}"
+                     -DBUILD_TYPE=${CMAKE_BUILD_TYPE} -DZLIB_LIBRARY=${ZLIB_LIBRARY}
+                     -DZLIB_INCLUDE_DIR=${ZLIB_INCLUDE_DIR}
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/relocated_install.cmake)
+    # The test builds the library twice more, a static and a shared build.
+    set_tests_properties(relocated_install PROPERTIES TIMEOUT 3600)
 
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)
