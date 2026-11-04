@@ -72,6 +72,11 @@ if(IS_ABSOLUTE "${TUGAPHONE_DATA_INSTALL_DIR}")
 else()
     set(_tugaphone_default_data "${CMAKE_INSTALL_PREFIX}/${TUGAPHONE_DATA_INSTALL_DIR}")
 endif()
+# The library looks for its data relative to the installed library, or to the
+# executable it is linked into, before the absolute path, so an install made
+# with `cmake --install --prefix` into another prefix finds its data.
+file(RELATIVE_PATH _tugaphone_data_from_lib "${CMAKE_INSTALL_FULL_LIBDIR}" "${CMAKE_INSTALL_FULL_DATADIR}/tugaphone")
+file(RELATIVE_PATH _tugaphone_data_from_bin "${CMAKE_INSTALL_FULL_BINDIR}" "${CMAKE_INSTALL_FULL_DATADIR}/tugaphone")
 
 add_library(tugaphone
     src/unicode.cpp
@@ -111,8 +116,9 @@ target_include_directories(tugaphone
 target_link_libraries(tugaphone
     PUBLIC tugalex::tugalex orthography2ipa::orthography2ipa
     PRIVATE bifonia::bifonia silabificador::silabificador
-    PRIVATE ZLIB::ZLIB)
-target_compile_definitions(tugaphone PRIVATE TUGAPHONE_DEFAULT_DATA_DIR="${_tugaphone_default_data}")
+    PRIVATE ZLIB::ZLIB ${CMAKE_DL_LIBS})
+target_compile_definitions(tugaphone PRIVATE TUGAPHONE_DEFAULT_DATA_DIR="${_tugaphone_default_data}"
+    TUGAPHONE_DATA_FROM_LIBDIR="${_tugaphone_data_from_lib}" TUGAPHONE_DATA_FROM_BINDIR="${_tugaphone_data_from_bin}")
 set_target_properties(tugaphone PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(tugaphone PRIVATE -Wall -Wextra -Wpedantic)
@@ -285,6 +291,14 @@ if(TUGAPHONE_BUILD_TESTS)
     target_link_libraries(tugaphone_threads_tokenizer_codeswitch PRIVATE tugaphone Threads::Threads)
     add_test(NAME threads_tokenizer_codeswitch COMMAND tugaphone_threads_tokenizer_codeswitch)
     set_tests_properties(threads_tokenizer_codeswitch PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+
+    # Installs into a prefix that is not CMAKE_INSTALL_PREFIX and runs the
+    # installed command line with none of the data variables set.
+    add_test(NAME relocated_install
+             COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}
+                     -DPREFIX=${CMAKE_CURRENT_BINARY_DIR}/relocated-install -DINSTALL_PREFIX=${CMAKE_INSTALL_PREFIX}
+                     -DBINDIR=${CMAKE_INSTALL_BINDIR}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/relocated_install.cmake)
 
     add_executable(tugaphone_examples tests/examples.cpp)
     target_link_libraries(tugaphone_examples PRIVATE tugaphone)
