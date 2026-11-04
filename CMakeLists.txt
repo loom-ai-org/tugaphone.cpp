@@ -307,6 +307,11 @@ if(TUGAPHONE_BUILD_TESTS)
             string(APPEND _relocated_settings "set(${_name} [==[${${_name}}]==] CACHE STRING \"\")\n")
         endif()
     endforeach()
+    # A zlib library given on the command line skips the search that sets the
+    # _RELEASE and _DEBUG entries.
+    if(DEFINED CACHE{ZLIB_LIBRARY})
+        string(APPEND _relocated_settings "set(ZLIB_LIBRARY [==[$CACHE{ZLIB_LIBRARY}]==] CACHE STRING \"\")\n")
+    endif()
     if(TUGAPHONE_USE_SYSTEM_DEPS)
         foreach(_dep silabificador tugalex bifonia orthography2ipa)
             if(${_dep}_DIR)

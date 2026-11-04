@@ -1,7 +1,9 @@
 # Installs tugaphone into prefixes that are not the CMAKE_INSTALL_PREFIX of the
 # build and runs the installed command line with no data variables. The
-# library, the tugalex lexicon, the bifonia tables and the orthography2ipa
-# specs must all come from the prefix of the command line:
+# library, the tugalex lexicon and the bifonia tables must all come from the
+# prefix of the command line. The orthography2ipa specs come from its source
+# tree when that tree is on disk, as orthography2ipa.cpp reads it first, so
+# this test does not check where they come from:
 #   1. this build, run by absolute path and by bare name through PATH;
 #   2. a static build with a two-level CMAKE_INSTALL_LIBDIR, with the data of
 #      another install in <prefix>/../share/tugaphone;
@@ -94,5 +96,9 @@ run("${CMAKE_COMMAND}" --install "${layouts}/build-ON" --prefix "${shared}")
 file(COPY "${SOURCE_DIR}/data/" DESTINATION "${shared}/lib/${DATADIR}/tugaphone")
 edit_expressions("${shared}/${DATADIR}/tugaphone")
 file(COPY "${shared}/${BINDIR}/tugaphone" DESTINATION "${layouts}/outside")
-phonemize("${layouts}/outside/tugaphone" "LD_LIBRARY_PATH=${shared}/${libdir}:$ENV{LD_LIBRARY_PATH}"
-          "DYLD_LIBRARY_PATH=${shared}/${libdir}:$ENV{DYLD_LIBRARY_PATH}")
+# Prepended, so that a build with shared system dependencies still finds them.
+set(library_path "${shared}/${libdir}")
+if(DEFINED ENV{LD_LIBRARY_PATH} AND NOT "$ENV{LD_LIBRARY_PATH}" STREQUAL "")
+    string(APPEND library_path ":$ENV{LD_LIBRARY_PATH}")
+endif()
+phonemize("${layouts}/outside/tugaphone" "LD_LIBRARY_PATH=${library_path}" "DYLD_LIBRARY_PATH=${library_path}")
