@@ -11,12 +11,19 @@ execute_process(COMMAND "${CMAKE_COMMAND}" --install "${BUILD_DIR}" --prefix "${
 if(NOT result EQUAL 0)
     message(FATAL_ERROR "install failed: ${result}")
 endif()
-execute_process(
-    COMMAND "${CMAKE_COMMAND}" -E env --unset=TUGAPHONE_DATA_DIR --unset=TUGALEX_DATA_DIR --unset=BIFONIA_DATA_DIR
-            --unset=ORTHOGRAPHY2IPA_DATA_DIR "TUGAPHONE_LEXICON_DIR=${PREFIX}-lexicon-cache"
-            "${PREFIX}/${BINDIR}/tugaphone" phonemize --lect pt-PT "Tenho 23 anos, Sr. Silva; li o Cap. XII."
-    OUTPUT_VARIABLE output ERROR_VARIABLE error RESULT_VARIABLE result)
+# The second run starts the command line by bare name through PATH, from a
+# directory that holds no file of that name, as a shell does.
 set(expected "ˈtɛɲu ˈvĩt i ˈtɾez ˈɐnuʃ sɨˈɲoɾ ˈsiɫvɐ ˈli o ˈkap ˈdoz\n")
-if(NOT result EQUAL 0 OR NOT output STREQUAL expected)
-    message(FATAL_ERROR "installed tugaphone: exit ${result}\nstdout: ${output}\nstderr: ${error}")
-endif()
+foreach(program "${PREFIX}/${BINDIR}/tugaphone" tugaphone)
+    file(REMOVE_RECURSE "${PREFIX}-lexicon-cache")
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E env --unset=TUGAPHONE_DATA_DIR --unset=TUGALEX_DATA_DIR --unset=BIFONIA_DATA_DIR
+                --unset=ORTHOGRAPHY2IPA_DATA_DIR "TUGAPHONE_LEXICON_DIR=${PREFIX}-lexicon-cache"
+                "PATH=${PREFIX}/${BINDIR}:$ENV{PATH}"
+                "${program}" phonemize --lect pt-PT "Tenho 23 anos, Sr. Silva; li o Cap. XII."
+        WORKING_DIRECTORY "${PREFIX}"
+        OUTPUT_VARIABLE output ERROR_VARIABLE error RESULT_VARIABLE result)
+    if(NOT result EQUAL 0 OR NOT output STREQUAL expected)
+        message(FATAL_ERROR "installed tugaphone (${program}): exit ${result}\nstdout: ${output}\nstderr: ${error}")
+    endif()
+endforeach()
