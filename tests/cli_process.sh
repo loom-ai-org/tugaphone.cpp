@@ -22,6 +22,19 @@ for var in TUGALEX_DATA_DIR BIFONIA_DATA_DIR; do
     fi
 done
 
+# A cache TSV made by hand, with the stamp that the engine wrote, reads as
+# Python reads it: a key keeps its case, and a line without two fields does
+# not count. The expected line is the output of the Python tugaphone of
+# PARITY.md with the same TSV.
+lexicon=$(mktemp -d "$scratch/lexicon-XXXXXX")
+TUGAPHONE_LEXICON_DIR="$lexicon" "$cli" phonemize --lect pt-PT "o gato" > /dev/null
+printf 'Gato\tˈmjaw\ncão\tˈbɐ̃w\tx\nsolo\npato\tˈkwak\r\nrato\tˈʃiʃ\n' > "$lexicon/pt-PT.tsv"
+out=$(TUGAPHONE_LEXICON_DIR="$lexicon" "$cli" phonemize --lect pt-PT "o Gato, o gato, o cão, o solo, o pato e o rato")
+if [ "$out" != "o ˈɡatu o ˈɡatu o ˈkɐ̃w̃ o ˈsɔlu o ˈkwak i o ˈʃiʃ" ]; then
+    echo "FAIL hand-made cache TSV: $out"
+    failed=1
+fi
+
 # A failed write to stdout: python scripts/benchmark.py exits with 120.
 TUGAPHONE_BENCHMARK_ROOT="$root" "$bench" --dialect pt-PT --limit 1 > /dev/full 2> "$scratch/err"
 status=$?
@@ -77,5 +90,5 @@ closed_pipe "$cli" list
 check "list | closed pipe" 120 "Exception ignored in: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>
 BrokenPipeError: [Errno 32] Broken pipe" "$(cat "$scratch/status")"
 
-[ "$failed" = 0 ] && echo "cli_process: 6 of 6 checks pass"
+[ "$failed" = 0 ] && echo "cli_process: 7 of 7 checks pass"
 exit "$failed"

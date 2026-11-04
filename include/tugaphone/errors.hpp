@@ -36,8 +36,10 @@ struct NotImplementedError : Error {
 };
 
 // The directory that holds the data files. The first of these that is set
-// wins: set_data_dir(), the TUGAPHONE_DATA_DIR environment variable, the
-// install location compiled into the library.
+// wins: set_data_dir(), the TUGAPHONE_DATA_DIR environment variable, the data
+// directory of the install that holds the library (found from the path of the
+// shared library or of the program), the install location compiled into the
+// library.
 std::string data_dir();
 void set_data_dir(std::string path);
 

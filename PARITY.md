@@ -31,7 +31,7 @@ The header of each golden file names the reference versions:
 | tugalex | 2.2.2a1 |
 | orthography2ipa | 7.111.14a1 |
 | silabificador | 2.1.1a2 |
-| bifonia | 0.2.0a4 |
+| bifonia | 0.3.7a1 |
 | ovos-number-parser | 0.24.3a1 |
 | markovonnx | 1.0.2a1 |
 
@@ -163,7 +163,7 @@ The goldens of the engine are these:
 
 Every engine record matches at the submodule pin, so `tests/parity/expected_divergences.tsv` lists no record. `engine(lect).features()` and `engine(lect).sentence_lattice()` apply the tugaphone normalizer through the plugin override, as `transcribe()` does, and the goldens call both methods with numbers, abbreviations and homographs.
 
-One cache case does not match Python: a cache TSV that was not written by the engine, with a current stamp. orthography2ipa.cpp `load_lexicon` folds the case of each key, keeps a trailing carriage return and reads everything after the first tab. Python keeps the key as it is and skips a line that does not have two fields. The engine writes neither case, so only a TSV changed by hand reaches it. The difference is in orthography2ipa.cpp.
+A cache TSV that was not written by the engine, with a current stamp, reads as Python reads it: a key keeps its case, and a line that does not have two fields does not count. `tests/cli_process.sh` checks such a TSV against the output of the Python tugaphone.
 
 orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads. The test `threads_tokenizer_codeswitch` builds tokenizer sentences in four threads and makes contact transcriptions in four others. CI runs the `threads_` tests under ThreadSanitizer. The test `threads_package` makes the first calls of ten package entry points in ten threads: the `TugaPhonemizer` methods, the plugin classes and the command line. With the lock made thread-local, ThreadSanitizer reports 35 races in it.
 
