@@ -31,7 +31,7 @@ The header of each golden file names the reference versions:
 | tugalex | 2.2.2a1 |
 | orthography2ipa | 7.111.14a1 |
 | silabificador | 2.1.1a2 |
-| bifonia | 0.2.0a4 |
+| bifonia | 0.3.7a1 |
 | ovos-number-parser | 0.24.3a1 |
 | markovonnx | 1.0.2a1 |
 
