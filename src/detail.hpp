@@ -19,6 +19,9 @@ using U32View = std::u32string_view;
 // bytes.decode("utf-8", "replace"): one U+FFFD per maximal subpart.
 U32 from_utf8(std::string_view text);
 std::string to_utf8(U32View text);
+// The message of the UnicodeDecodeError that bytes.decode("utf-8") raises
+// for the first ill-formed sequence, or nullopt when the text is UTF-8.
+std::optional<std::string> utf8_decode_error(std::string_view text);
 
 // One code point.
 bool is_space(char32_t c);    // str.isspace()

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstdio>
 #include <iterator>
 
 #include "detail.hpp"
@@ -118,6 +119,52 @@ U32 from_utf8(std::string_view text) {
         i += k;
     }
     return out;
+}
+
+std::optional<std::string> utf8_decode_error(std::string_view text) {
+    const size_t n = text.size();
+    auto byte = [&](size_t k) { return static_cast<unsigned char>(text[k]); };
+    auto error = [&](size_t start, size_t end, const char* reason) {
+        char buf[128];
+        if (end - start == 1)
+            std::snprintf(buf, sizeof buf, "'utf-8' codec can't decode byte 0x%02x in position %zu: %s", byte(start),
+                          start, reason);
+        else
+            std::snprintf(buf, sizeof buf, "'utf-8' codec can't decode bytes in position %zu-%zu: %s", start, end - 1,
+                          reason);
+        return std::optional<std::string>(buf);
+    };
+    size_t i = 0;
+    while (i < n) {
+        const unsigned char b = byte(i);
+        if (b < 0x80) {
+            ++i;
+            continue;
+        }
+        size_t len;
+        unsigned char lo = 0x80, hi = 0xBF;  // the range of the second byte
+        if (b >= 0xC2 && b <= 0xDF) {
+            len = 2;
+        } else if (b >= 0xE0 && b <= 0xEF) {
+            len = 3;
+            if (b == 0xE0) lo = 0xA0;
+            if (b == 0xED) hi = 0x9F;
+        } else if (b >= 0xF0 && b <= 0xF4) {
+            len = 4;
+            if (b == 0xF0) lo = 0x90;
+            if (b == 0xF4) hi = 0x8F;
+        } else {
+            return error(i, i + 1, "invalid start byte");
+        }
+        for (size_t k = 1; k < len; ++k) {
+            if (i + k == n) return error(i, n, "unexpected end of data");
+            const unsigned char c = byte(i + k);
+            const unsigned char min = k == 1 ? lo : 0x80, max = k == 1 ? hi : 0xBF;
+            if (c < min || c > max) return error(i, i + k, "invalid continuation byte");
+        }
+        i += len;
+    }
+    return std::nullopt;
 }
 
 std::string to_utf8(U32View text) {

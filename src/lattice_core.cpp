@@ -258,10 +258,12 @@ void write_lexicon(std::string_view region, const std::string& path) {
 bool is_stale(const std::string& path) {
     std::error_code ec;
     if (!fs::exists(path, ec) || fs::file_size(path, ec) == 0) return true;
-    // An unreadable stamp is stale, as Python's OSError branch. A stamp that is
-    // not UTF-8 decodes to U+FFFD here and is stale too, where Python raises.
+    // An unreadable stamp is stale, as Python's OSError branch. Python decodes
+    // the stamp strictly and lets a UnicodeDecodeError through.
     const auto stamp = read_text(stamp_path(path));
-    return !stamp || s8(detail::strip_ws(u(*stamp))) != tugalex_version();
+    if (!stamp) return true;
+    if (auto error = detail::utf8_decode_error(*stamp)) throw Error("UnicodeDecodeError", *error);
+    return s8(detail::strip_ws(u(*stamp))) != tugalex_version();
 }
 
 namespace {

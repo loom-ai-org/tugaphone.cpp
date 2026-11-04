@@ -70,6 +70,22 @@ std::string is_stale(const std::string& scenario) {
     return out;
 }
 
+// _is_stale on a stamp of the given bytes, written as hex in the record.
+std::string is_stale_bytes(const std::string& hex) {
+    const std::string dir = scratch_dir() + "/stale_bytes";
+    fs::create_directories(dir);
+    const std::string path = dir + "/x.tsv";
+    std::string stamp;
+    for (size_t i = 0; i + 1 < hex.size(); i += 2) stamp.push_back(static_cast<char>(std::stoi(hex.substr(i, 2), nullptr, 16)));
+    write_bytes(path, "a\tb\n");
+    write_bytes(lc::stamp_path(path), stamp);
+    try {
+        return J(lc::is_stale(path));
+    } catch (const tugaphone::Error& e) {
+        return "{\"err\":" + J(e.python_type()) + ",\"msg\":" + J(std::string(e.what())) + "}";
+    }
+}
+
 // _write_lexicon under a broken cache: an unknown region, a parent that is a
 // regular file, and a stamp path that is a directory.
 std::string write_lexicon_error(const std::string& scenario) {
@@ -179,6 +195,7 @@ std::string record_lattice_core(const Value& v) {
                }) + "]";
     }
     if (fn == "is_stale") return head(v) + is_stale(v[1].str) + "]";
+    if (fn == "is_stale_bytes") return head(v) + is_stale_bytes(v[1].str) + "]";
     if (fn == "write_lexicon_error") return head(v) + write_lexicon_error(v[1].str) + "]";
     if (fn == "lexicon_cache_dir") return head(v) + lexicon_cache_dir(v[1]) + "]";
     if (fn == "engine_lattice") return head(v) + guard([&] { return engine_lattice(v[1].str, v[2].str); }) + "]";
