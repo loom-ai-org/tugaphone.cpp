@@ -19,6 +19,16 @@ constexpr uint64_t kMaxRepeat = 4294967295ULL;  // _sre.MAXREPEAT
 constexpr uint64_t kMaxGroups = 1073741823ULL;  // _sre.MAXGROUPS
 constexpr uint64_t kMaxCode = 4294967295ULL;    // re._compiler.MAXCODE
 constexpr uint64_t kInf = std::numeric_limits<uint64_t>::max();  // MAXWIDTH, saturated
+// Python raises RecursionError when a call would take more frames than the
+// recursion limit. re._parser recurses once per group level through
+// _parse_sub and _parse, and once per conditional through _parse; its
+// `nested` argument counts those frames. Here a frame of re._parser has the
+// number `nested` of the _parse or _parse_sub that holds it, or the number of
+// its caller plus one. When Transform.apply or RespellRule.matches is called
+// from the top level of a script, the frame after 993 raises RecursionError.
+// The parser raises at the same points. The limit also bounds the C++ stack
+// that the parser, the compiler and the matcher use.
+constexpr int kMaxFrame = 993;
 
 uint64_t sat_add(uint64_t a, uint64_t b) { return (a > kInf - b) ? kInf : a + b; }
 uint64_t sat_mul(uint64_t a, uint64_t b) { return (a != 0 && b > kInf / a) ? kInf : a * b; }
@@ -205,6 +215,35 @@ class Tokenizer {
 public:
     explicit Tokenizer(U32View s) : s_(s) { advance(); }
 
+    // Python's frame for one re._parser function while it runs.
+    class Call {
+    public:
+        Call(Tokenizer& source, int frame) : source_(source), saved_(source.frame_) { source.frame_ = frame; }
+        explicit Call(Tokenizer& source) : Call(source, source.frame_ + 1) {}
+        ~Call() { source_.frame_ = saved_; }
+        Call(const Call&) = delete;
+        Call& operator=(const Call&) = delete;
+
+    private:
+        Tokenizer& source_;
+        int saved_;
+    };
+
+    void set_frame(int frame) { frame_ = frame; }
+    // RecursionError when Python would call `depth` frames below the current one.
+    void need(int depth) const {
+        if (frame_ + depth > kMaxFrame) throw Error("RecursionError", "maximum recursion depth exceeded");
+    }
+    // raise source.error(message): Tokenizer.error and its call of tell.
+    // source.error(msg, offset): an error at tell() - offset.
+    [[noreturn]] void error(const std::string& message, size_t offset = 0) const {
+        need(2);
+        raise_here(message, offset);
+    }
+    [[noreturn]] void raise_here(const std::string& message, size_t offset) const {
+        raise_at(message, s_, static_cast<std::ptrdiff_t>(tell()) - static_cast<std::ptrdiff_t>(offset));
+    }
+
     const Token& next() const { return next_; }
     bool match(U32View c) {
         if (next_ && *next_ == c) {
@@ -232,11 +271,15 @@ public:
         while (true) {
             Token c = get();
             if (!c) {
-                if (result.empty()) error("missing " + name);
-                error("missing " + str(U32(1, terminator)) + ", unterminated name", result.size());
+                need(3);
+                if (result.empty()) raise_here("missing " + name, 0);
+                raise_here("missing " + str(U32(1, terminator)) + ", unterminated name", result.size());
             }
             if (c->size() == 1 && (*c)[0] == terminator) {
-                if (result.empty()) error("missing " + name, 1);
+                if (result.empty()) {
+                    need(3);
+                    raise_here("missing " + name, 1);
+                }
                 break;
             }
             result += *c;
@@ -249,16 +292,17 @@ public:
         advance();
     }
     void checkgroupname(const U32& name, size_t offset) const {
-        if (!detail::is_identifier(name))
-            error("bad character in group name " + detail::py_str_repr(name), name.size() + offset);
-    }
-    // source.error(msg, offset): an error at tell() - offset.
-    [[noreturn]] void error(const std::string& message, size_t offset = 0) const {
-        raise_at(message, s_, static_cast<std::ptrdiff_t>(tell()) - static_cast<std::ptrdiff_t>(offset));
+        if (!detail::is_identifier(name)) {
+            need(3);
+            raise_here("bad character in group name " + detail::py_str_repr(name), name.size() + offset);
+        }
     }
 
 private:
+    // Tokenizer.__next, which Python reaches through get, match, getwhile,
+    // getuntil or seek.
     void advance() {
+        need(2);
         if (index_ >= s_.size()) {
             next_.reset();
             return;
@@ -267,7 +311,10 @@ private:
         size_t index = index_;
         if (c[0] == U'\\') {
             ++index;
-            if (index >= s_.size()) raise_at("bad escape (end of pattern)", s_, static_cast<std::ptrdiff_t>(s_.size()) - 1);
+            if (index >= s_.size()) {
+                need(3);
+                raise_at("bad escape (end of pattern)", s_, static_cast<std::ptrdiff_t>(s_.size()) - 1);
+            }
             c += s_[index];
         }
         index_ = index + 1;
@@ -277,6 +324,7 @@ private:
     U32View s_;
     size_t index_ = 0;
     Token next_;
+    int frame_ = 0;
 };
 
 struct Code {
@@ -352,6 +400,7 @@ std::optional<Code> hex_escape(Tokenizer& source, U32& escape) {
     }
     if (c == U'N') {
         // The syntax errors are re._parser's; the name lookup is not ported.
+        source.need(2);  // match and getuntil
         if (!source.match(U"{")) source.error("missing {");
         source.getuntil(U'}', "character name");
         throw NotImplementedError("\\N{...} escapes are not supported");
@@ -360,6 +409,7 @@ std::optional<Code> hex_escape(Tokenizer& source, U32& escape) {
 }
 
 Code class_escape(Tokenizer& source, U32 escape) {
+    const Tokenizer::Call call(source);
     if (auto code = escapes(escape)) return *code;
     if (auto code = categories(escape); code && code->kind == Code::Category) return *code;
     if (auto code = hex_escape(source, escape)) return *code;
@@ -378,14 +428,17 @@ Code class_escape(Tokenizer& source, U32 escape) {
     source.error("bad escape " + str(escape), escape.size());
 }
 
-void checklookbehindgroup(const State& state, int gid, const Tokenizer& source) {
+void checklookbehindgroup(Tokenizer& source, const State& state, int gid) {
+    const Tokenizer::Call call(source);
     if (state.lookbehindgroups) {
+        source.need(2);  // checkgroup and the groups property
         if (!state.checkgroup(gid)) source.error("cannot refer to an open group");
         if (gid >= *state.lookbehindgroups) source.error("cannot refer to group defined in the same lookbehind subpattern");
     }
 }
 
 Code escape_code(Tokenizer& source, U32 escape, State& state) {
+    const Tokenizer::Call call(source);
     if (auto code = categories(escape)) return *code;
     if (auto code = escapes(escape)) return *code;
     if (auto code = hex_escape(source, escape)) return *code;
@@ -406,8 +459,9 @@ Code escape_code(Tokenizer& source, U32 escape, State& state) {
         }
         const uint64_t group = parse_uint(escape.substr(1), 10);
         if (group < static_cast<uint64_t>(state.groups())) {
+            source.need(2);  // checkgroup and the groups property
             if (!state.checkgroup(static_cast<int>(group))) source.error("cannot refer to an open group", escape.size());
-            checklookbehindgroup(state, static_cast<int>(group), source);
+            checklookbehindgroup(source, state, static_cast<int>(group));
             Code code;
             code.kind = Code::Ref;
             code.group = static_cast<int>(group);
@@ -440,24 +494,9 @@ Node node_of(const Code& code) {
     return n;
 }
 
-Seq parse_seq(Tokenizer& source, State& state, bool verbose, int nested, bool first = false);
-
-Seq parse_sub(Tokenizer& source, State& state, bool verbose, int nested) {
-    std::vector<Seq> items;
-    while (true) {
-        items.push_back(parse_seq(source, state, verbose, nested + 1, nested == 0 && items.empty()));
-        if (!source.match(U"|")) break;
-        if (nested == 0) verbose = state.flags & VERBOSE;
-    }
-    if (items.size() == 1) return items[0];
-    Node branch;
-    branch.op = Op::Branch;
-    branch.kids = std::move(items);
-    return Seq{branch};
-}
-
 // _parse_flags: nullopt for global flags "(?flags)".
 std::optional<std::pair<int, int>> parse_flags(Tokenizer& source, State& state, char32_t ch) {
+    const Tokenizer::Call call(source);
     int add_flags = 0, del_flags = 0;
     Token t;
     if (ch != U'-') {
@@ -578,8 +617,42 @@ void parse_class(Tokenizer& source, Seq& out) {
     out.push_back(std::move(n));
 }
 
-Seq parse_seq(Tokenizer& source, State& state, bool verbose, int nested, bool first) {
-    Seq sub;
+// re._parser's _parse_sub and _parse recurse once per nesting level. Here each
+// open call is an entry of a heap stack, so the C++ stack does not grow with
+// the nesting of the pattern.
+struct ParseCall {
+    bool sub = false;  // _parse_sub; _parse otherwise
+    int nested = 0;
+    bool verbose = false;
+    bool first = false;       // _parse: the first item of the pattern
+    std::vector<Seq> items;   // _parse_sub: the alternatives so far
+    Seq seq;                  // _parse: the items so far
+    // _parse: the group whose body the call above this one parses.
+    enum class Open { None, Group, Look, CondYes, CondNo } open = Open::None;
+    int group = 0;
+    bool atomic = false;
+    int add_flags = 0, del_flags = 0;
+    int dir = 1;
+    char32_t look = 0;
+    bool lookbehind_set = false;  // this lookbehind set state.lookbehindgroups
+    Node cond;                    // the GroupRefExists that the call above fills
+    size_t start = 0;             // the position of the "(" of that group
+};
+
+struct ChildCall {
+    bool sub;
+    int nested;
+    bool verbose;
+    bool first;
+};
+
+// The loop of _parse, up to the end of its items or up to a group, whose body
+// a child call parses.
+std::optional<ChildCall> parse_items(Tokenizer& source, State& state, ParseCall& call) {
+    Seq& sub = call.seq;
+    bool& verbose = call.verbose;
+    const int nested = call.nested;
+    const bool first = call.first;
     while (true) {
         const Token& peek = source.next();
         if (!peek) break;
@@ -653,11 +726,11 @@ Seq parse_seq(Tokenizer& source, State& state, bool verbose, int nested, bool fi
             if (sub.empty() || sub.back().op == Op::At) source.error("nothing to repeat", source.tell() - here + thiss.size());
             if (sub.back().op == Op::Repeat) source.error("multiple repeat", source.tell() - here + thiss.size());
             Seq item;
-            const Node& last = sub.back();
+            Node& last = sub.back();
             if (last.op == Op::Subpattern && last.group == 0 && !last.add_flags && !last.del_flags) {
-                item = last.kids[0];
+                item = std::move(last.kids[0]);
             } else {
-                item = Seq{last};
+                item.push_back(std::move(last));
             }
             Node rep;
             rep.op = Op::Repeat;
@@ -678,7 +751,6 @@ Seq parse_seq(Tokenizer& source, State& state, bool verbose, int nested, bool fi
             sub.push_back(n);
         } else if (c == U'(') {
             const size_t start = source.tell() - 1;
-            auto unterminated = [&] { source.error("missing ), unterminated subpattern", source.tell() - start); };
             bool capture = true, atomic = false;
             std::optional<U32> name;
             int add_flags = 0, del_flags = 0;
@@ -699,7 +771,7 @@ Seq parse_seq(Tokenizer& source, State& state, bool verbose, int nested, bool fi
                         if (it == state.groupdict.end())
                             source.error("unknown group name " + detail::py_str_repr(ref), ref.size() + 1);
                         if (!state.checkgroup(it->second)) source.error("cannot refer to an open group", ref.size() + 1);
-                        checklookbehindgroup(state, it->second, source);
+                        checklookbehindgroup(source, state, it->second);
                         Node n;
                         n.op = Op::GroupRef;
                         n.group = it->second;
@@ -730,15 +802,12 @@ Seq parse_seq(Tokenizer& source, State& state, bool verbose, int nested, bool fi
                         dir = -1;
                         if (!saved_lookbehind) state.lookbehindgroups = state.groups();
                     }
-                    Seq p = parse_sub(source, state, verbose, nested + 1);
-                    if (dir < 0 && !saved_lookbehind) state.lookbehindgroups.reset();
-                    if (!source.match(U")")) unterminated();
-                    Node n;
-                    n.op = kind == U'=' ? Op::Assert : Op::AssertNot;
-                    n.dir = dir;
-                    n.kids.push_back(std::move(p));
-                    sub.push_back(std::move(n));
-                    continue;
+                    call.open = ParseCall::Open::Look;
+                    call.start = start;
+                    call.dir = dir;
+                    call.look = kind;
+                    call.lookbehind_set = dir < 0 && !saved_lookbehind;
+                    return ChildCall{true, nested + 1, verbose, false};
                 } else if (plain && ch == U'(') {
                     const U32 condname = source.getuntil(U')', "group name");
                     int condgroup;
@@ -756,20 +825,13 @@ Seq parse_seq(Tokenizer& source, State& state, bool verbose, int nested, bool fi
                         if (!state.grouprefpos.count(g)) state.grouprefpos[g] = source.tell() - condname.size() - 1;
                         condgroup = static_cast<int>(g);
                     }
-                    checklookbehindgroup(state, condgroup, source);
-                    Seq yes = parse_seq(source, state, verbose, nested + 1);
-                    Node n;
-                    n.op = Op::GroupRefExists;
-                    n.group = condgroup;
-                    n.kids.push_back(std::move(yes));
-                    if (source.match(U"|")) {
-                        n.kids.push_back(parse_seq(source, state, verbose, nested + 1));
-                        n.has_no = true;
-                        if (is_token(source.next(), U'|')) source.error("conditional backref with more than two branches");
-                    }
-                    if (!source.match(U")")) unterminated();
-                    sub.push_back(std::move(n));
-                    continue;
+                    checklookbehindgroup(source, state, condgroup);
+                    call.open = ParseCall::Open::CondYes;
+                    call.start = start;
+                    call.cond = Node();
+                    call.cond.op = Op::GroupRefExists;
+                    call.cond.group = condgroup;
+                    return ChildCall{false, nested + 1, verbose, false};
                 } else if (plain && ch == U'>') {
                     capture = false;
                     atomic = true;
@@ -803,16 +865,13 @@ Seq parse_seq(Tokenizer& source, State& state, bool verbose, int nested, bool fi
                 }
             }
             const bool sub_verbose = (verbose || (add_flags & VERBOSE)) && !(del_flags & VERBOSE);
-            Seq p = parse_sub(source, state, sub_verbose, nested + 1);
-            if (!source.match(U")")) unterminated();
-            if (group) state.groupwidths[static_cast<size_t>(group)] = getwidth(p, state);
-            Node n;
-            n.op = atomic ? Op::Atomic : Op::Subpattern;
-            n.group = group;
-            n.add_flags = add_flags;
-            n.del_flags = del_flags;
-            n.kids.push_back(std::move(p));
-            sub.push_back(std::move(n));
+            call.open = ParseCall::Open::Group;
+            call.start = start;
+            call.group = group;
+            call.atomic = atomic;
+            call.add_flags = add_flags;
+            call.del_flags = del_flags;
+            return ChildCall{true, nested + 1, sub_verbose, false};
         } else if (c == U'^') {
             Node n;
             n.op = Op::At;
@@ -825,16 +884,116 @@ Seq parse_seq(Tokenizer& source, State& state, bool verbose, int nested, bool fi
             sub.push_back(n);
         }
     }
-    // Splice in the subpatterns that neither capture nor change flags.
-    Seq out;
-    for (Node& n : sub) {
-        if (n.op == Op::Subpattern && n.group == 0 && !n.add_flags && !n.del_flags) {
-            for (Node& k : n.kids[0]) out.push_back(std::move(k));
-        } else {
-            out.push_back(std::move(n));
-        }
+    return std::nullopt;
+}
+
+// The end of the group whose body `body` is: _parse after its child call.
+// A conditional with a "no" branch needs a second child call.
+std::optional<ChildCall> close_group(Tokenizer& source, State& state, ParseCall& call, Seq body) {
+    Node n;
+    switch (call.open) {
+        case ParseCall::Open::Group:
+            if (!source.match(U")")) source.error("missing ), unterminated subpattern", source.tell() - call.start);
+            if (call.group) state.groupwidths[static_cast<size_t>(call.group)] = getwidth(body, state);
+            n.op = call.atomic ? Op::Atomic : Op::Subpattern;
+            n.group = call.group;
+            n.add_flags = call.add_flags;
+            n.del_flags = call.del_flags;
+            n.kids.push_back(std::move(body));
+            break;
+        case ParseCall::Open::Look:
+            if (call.lookbehind_set) state.lookbehindgroups.reset();
+            if (!source.match(U")")) source.error("missing ), unterminated subpattern", source.tell() - call.start);
+            n.op = call.look == U'=' ? Op::Assert : Op::AssertNot;
+            n.dir = call.dir;
+            n.kids.push_back(std::move(body));
+            break;
+        case ParseCall::Open::CondYes:
+            call.cond.kids.push_back(std::move(body));
+            if (source.match(U"|")) {
+                call.open = ParseCall::Open::CondNo;
+                return ChildCall{false, call.nested + 1, call.verbose, false};
+            }
+            if (!source.match(U")")) source.error("missing ), unterminated subpattern", source.tell() - call.start);
+            n = std::move(call.cond);
+            break;
+        case ParseCall::Open::CondNo:
+            call.cond.kids.push_back(std::move(body));
+            call.cond.has_no = true;
+            if (is_token(source.next(), U'|')) source.error("conditional backref with more than two branches");
+            if (!source.match(U")")) source.error("missing ), unterminated subpattern", source.tell() - call.start);
+            n = std::move(call.cond);
+            break;
+        case ParseCall::Open::None:
+            break;
     }
-    return out;
+    call.open = ParseCall::Open::None;
+    call.seq.push_back(std::move(n));
+    return std::nullopt;
+}
+
+// _parse_sub(source, state, verbose, 0).
+Seq parse(Tokenizer& source, State& state, bool verbose) {
+    std::vector<ParseCall> calls;
+    auto open = [&](const ChildCall& c) {
+        source.set_frame(c.nested);
+        if (!c.sub) source.need(1);  // SubPattern(state)
+        ParseCall call;
+        call.sub = c.sub;
+        call.nested = c.nested;
+        call.verbose = c.verbose;
+        call.first = c.first;
+        calls.push_back(std::move(call));
+    };
+    open(ChildCall{true, 0, verbose, false});
+    Seq ret;              // the result of the call that returned last
+    bool returned = false;
+    while (true) {
+        ParseCall& call = calls.back();
+        source.set_frame(call.nested);
+        std::optional<ChildCall> child;
+        if (call.sub) {
+            if (!returned) {
+                child = ChildCall{false, call.nested + 1, call.verbose, call.nested == 0};
+            } else {
+                call.items.push_back(std::move(ret));
+                if (source.match(U"|")) {
+                    if (call.nested == 0) call.verbose = state.flags & VERBOSE;
+                    child = ChildCall{false, call.nested + 1, call.verbose, false};
+                } else if (call.items.size() == 1) {
+                    ret = std::move(call.items[0]);
+                } else {
+                    Node branch;
+                    branch.op = Op::Branch;
+                    branch.kids = std::move(call.items);
+                    ret = Seq{};
+                    ret.push_back(std::move(branch));
+                }
+            }
+        } else {
+            if (returned) child = close_group(source, state, call, std::move(ret));
+            if (!child) child = parse_items(source, state, call);
+            if (!child) {
+                // Splice in the subpatterns that neither capture nor change flags.
+                ret = Seq{};
+                for (Node& n : call.seq) {
+                    if (n.op == Op::Subpattern && n.group == 0 && !n.add_flags && !n.del_flags) {
+                        for (Node& k : n.kids[0]) ret.push_back(std::move(k));
+                    } else {
+                        ret.push_back(std::move(n));
+                    }
+                }
+            }
+        }
+        if (child) {
+            open(*child);  // `call` dangles from here on
+            returned = false;
+            continue;
+        }
+        calls.pop_back();
+        returned = true;
+        if (calls.empty()) return ret;
+    }
 }
 
 // ── Compiled program: the parse tree with the flags resolved ──────────────
@@ -1015,8 +1174,6 @@ int combine_flags(int flags, int add_flags, int del_flags) {
     return (flags | add_flags) & ~del_flags;
 }
 
-MSeq compile_seq(const Seq& seq, int flags, const State& state);
-
 MNode compile_literal(const Node& n, int flags) {
     MNode m;
     m.kind = n.op == Op::Literal ? MNode::Lit : MNode::NotLit;
@@ -1042,7 +1199,10 @@ MNode compile_literal(const Node& n, int flags) {
     return m;
 }
 
-MNode compile_node(const Node& n, int flags, const State& state) {
+// A compiled node without its kids. `kid_flags` gets the flags its kids
+// compile with.
+MNode compile_node(const Node& n, int flags, const State& state, int& kid_flags) {
+    kid_flags = flags;
     MNode m;
     switch (n.op) {
         case Op::Literal:
@@ -1064,28 +1224,18 @@ MNode compile_node(const Node& n, int flags, const State& state) {
             return m;
         case Op::Branch:
             m.kind = MNode::Branch;
-            for (const Seq& alt : n.kids) m.kids.push_back(compile_seq(alt, flags, state));
             return m;
-        case Op::Subpattern: {
-            const int sub_flags = combine_flags(flags, n.add_flags, n.del_flags);
-            MSeq body = compile_seq(n.kids[0], sub_flags, state);
-            if (n.group == 0) {
-                // A flag-only group: its body runs inline.
-                m.kind = MNode::Branch;
-                m.kids.push_back(std::move(body));
-                return m;
-            }
-            m.kind = MNode::Mark;
+        case Op::Subpattern:
+            kid_flags = combine_flags(flags, n.add_flags, n.del_flags);
+            // A flag-only group: its body runs inline.
+            m.kind = n.group == 0 ? MNode::Branch : MNode::Mark;
             m.group = n.group;
-            m.kids.push_back(std::move(body));
             return m;
-        }
         case Op::Repeat:
             m.kind = MNode::Repeat;
             m.min = n.min;
             m.max = n.max;
             m.rep = n.rep;
-            m.kids.push_back(compile_seq(n.kids[0], flags, state));
             return m;
         case Op::GroupRef:
             m.kind = MNode::Ref;
@@ -1096,7 +1246,6 @@ MNode compile_node(const Node& n, int flags, const State& state) {
             m.kind = MNode::RefExists;
             m.group = n.group;
             m.has_no = n.has_no;
-            for (const Seq& k : n.kids) m.kids.push_back(compile_seq(k, flags, state));
             return m;
         case Op::Assert:
         case Op::AssertNot: {
@@ -1109,22 +1258,55 @@ MNode compile_node(const Node& n, int flags, const State& state) {
                 if (w.lo != w.hi) raise("look-behind requires fixed-width pattern");
                 m.width = w.lo;
             }
-            m.kids.push_back(compile_seq(n.kids[0], flags, state));
             return m;
         }
         case Op::Atomic:
             m.kind = MNode::Atomic;
-            m.kids.push_back(compile_seq(n.kids[0], flags, state));
             return m;
     }
     return m;
 }
 
-MSeq compile_seq(const Seq& seq, int flags, const State& state) {
-    MSeq out;
-    out.reserve(seq.size());
-    for (const Node& n : seq) out.push_back(compile_node(n, flags, state));
-    return out;
+// Compiles the parse tree depth first, in the order a recursive compiler
+// would, with a heap stack of the open nodes, so the C++ stack does not grow
+// with the nesting of the pattern.
+MSeq compile_seq(const Seq& root, int flags, const State& state) {
+    struct Open {
+        const Seq* kids;  // the kid sequences of the node
+        size_t count;     // how many there are
+        int flags;        // the flags they compile with
+        MNode m;          // the node, with the kids compiled so far
+        size_t k = 0;     // the kid sequence being compiled
+        size_t i = 0;     // its next node
+        MSeq out{};       // its compiled nodes so far
+    };
+    std::vector<Open> open;
+    open.push_back(Open{&root, 1, flags, MNode()});
+    while (true) {
+        Open& o = open.back();
+        const Seq& seq = o.kids[o.k];
+        if (o.i < seq.size()) {
+            const Node& n = seq[o.i++];
+            int kid_flags;
+            MNode m = compile_node(n, o.flags, state, kid_flags);
+            if (n.kids.empty()) {
+                o.out.push_back(std::move(m));
+            } else {
+                open.push_back(Open{n.kids.data(), n.kids.size(), kid_flags, std::move(m)});  // `o` dangles now
+            }
+            continue;
+        }
+        o.m.kids.push_back(std::move(o.out));
+        o.out = MSeq();
+        if (++o.k < o.count) {
+            o.i = 0;
+            continue;
+        }
+        MNode done = std::move(o.m);
+        open.pop_back();
+        if (open.empty()) return std::move(done.kids[0]);
+        open.back().out.push_back(std::move(done));
+    }
 }
 
 // ── Matcher ─────────────────────────────────────────────────────────────────
@@ -1361,8 +1543,10 @@ private:
                 bool matched = false;
                 if (!n.behind || pos >= n.width) {
                     const size_t from = n.behind ? pos - static_cast<size_t>(n.width) : pos;
+                    const size_t frames = frames_.size();
                     size_t ignored = 0;
                     matched = run(n.kids[0], from, push_frame({Frame::SubEnd}), ignored);
+                    frames_.resize(frames);  // no backtrack point refers to the frames of the sub-match
                 }
                 if (n.negative) {
                     undo(trail);
@@ -1371,8 +1555,11 @@ private:
                 return matched ? Mode::Return : Mode::Fail;
             }
             case MNode::Atomic: {
+                const size_t frames = frames_.size();
                 size_t end = 0;
-                if (!run(n.kids[0], pos, push_frame({Frame::SubEnd}), end)) return Mode::Fail;
+                const bool matched = run(n.kids[0], pos, push_frame({Frame::SubEnd}), end);
+                frames_.resize(frames);
+                if (!matched) return Mode::Fail;
                 pos = end;
                 return Mode::Return;
             }
@@ -1414,7 +1601,12 @@ private:
         const size_t before = trail_.size();
         const MSeq& body = n.kids[0];
         uint64_t count = 0;
-        auto once = [&](size_t from, size_t& to) { return run(body, from, push_frame({Frame::SubEnd}), to); };
+        auto once = [&](size_t from, size_t& to) {
+            const size_t frames = frames_.size();
+            const bool matched = run(body, from, push_frame({Frame::SubEnd}), to);
+            frames_.resize(frames);
+            return matched;
+        };
         while (count < n.min) {
             size_t to = 0;
             if (!once(pos, to)) {
@@ -1583,7 +1775,7 @@ Pattern::Pattern(U32View pattern, int flags) {
     State state;
     state.flags = flags;
     Tokenizer source(pattern);
-    Seq p = parse_sub(source, state, flags & VERBOSE, 0);
+    Seq p = parse(source, state, flags & VERBOSE);
     // fix_flags
     int final_flags = state.flags;
     if (final_flags & LOCALE) throw ValueError("cannot use LOCALE flag with a str pattern");
