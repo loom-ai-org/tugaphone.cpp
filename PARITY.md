@@ -167,7 +167,40 @@ Two cache cases do not match Python:
 - A stamp file that is not UTF-8. Python raises `UnicodeDecodeError` from each `phonemize` call until the file is deleted. The port reads the stamp as stale and writes the cache again. A port of the crash would make a broken cache permanent, and no caller can depend on it.
 - A cache TSV that was not written by the engine, with a current stamp. orthography2ipa.cpp `load_lexicon` folds the case of each key, keeps a trailing carriage return and reads everything after the first tab. Python keeps the key as it is and skips a line that does not have two fields. The engine writes neither case, so only a TSV changed by hand reaches it. The difference is in orthography2ipa.cpp.
 
-orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads. The test `threads_tokenizer_codeswitch` builds tokenizer sentences in four threads and makes contact transcriptions in four others. CI runs the `threads_` tests under ThreadSanitizer.
+orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads. The test `threads_tokenizer_codeswitch` builds tokenizer sentences in four threads and makes contact transcriptions in four others. CI runs the `threads_` tests under ThreadSanitizer. The test `threads_package` makes the first calls of ten package entry points in ten threads: the `TugaPhonemizer` methods, the plugin classes and the command line. With the lock made thread-local, ThreadSanitizer reports 35 races in it.
+
+## The package API, the plugin and the command line
+
+`include/tugaphone/tugaphone.hpp` holds `TugaPhonemizer` and the names that the Python package exports at its top level. `phonemize_sentence` and `force_accent` call the lattice engine. The deprecated `regional_dialect` argument has no effect, as in Python. `include/tugaphone/plugin.hpp` holds `TugaphoneG2PPlugin` and `SilabificadorSyllabifier`. The executable `tugaphone` is the console script `python -m tugaphone`.
+
+The goldens of these parts are these:
+
+| Corpus | Records |
+| --- | --- |
+| `phonemize_sentence` of each of the 41 lects over the 4,541 unique gold-TSV words, five contact modes in each record | 186,181 |
+| `phonemize_sentence` of each gold-TSV row and of the test strings through 7 lects | 20,453 |
+| The acceptance sentence in each lect, `is_supported`, `regional_dialect`, `force_accent`, `respell` and the constants | 552 |
+| The plugin: `syllabify`, `transcribe`, `transcribe_word` with and without a context, `force_accent` and the constants | 9,322 |
+| The command line: help at 15 `COLUMNS` values, 42 error cases at 2 widths, 168 runs, 8 runs with arguments that are not UTF-8, and 17 runs that fail outside argparse or change the environment | 442 |
+| The error lines of overlay JSON, UTF-8 decoding and regular expressions, in the process | 7,036 |
+
+The command-line records run `python -I -m tugaphone` and the C++ executable on the same arguments, and compare standard output, standard error and the exit status. When Python ends with a traceback, for example for an overlay file that does not exist, the record holds the last line of the traceback: the exception class and its message. The C++ executable prints that line alone and exits with status 1. The path of this repository reads as `<root>` in that line. This holds for the exceptions of the libraries too: an unclosed `<phoneme>` tag gives `orthography2ipa.markup.MarkupError`, and a lexicon cache that cannot be made gives the `OSError` subclass of its errno, with the path that failed.
+
+Some command-line records change how the process runs. Six records set the lexicon cache under a file, under `/proc`, under `/dev/null`, or under a home or cache directory that does not exist. Four records write standard output to `/dev/full`: Python then exits with status 120 and prints the `OSError` of the flush, and so does the C++ executable. Both executables write standard output as Python's `sys.stdout` does. Up to 8,192 bytes wait in the text layer, over a buffer of the block size of the descriptor. A longer output reaches the descriptor inside `print()`, so a failed write there is an uncaught `OSError` with its own errno, and the status is 1. `tests/cli_process.sh` checks this for `/dev/full` and for a closed pipe. It also checks that a short output into a closed pipe exits with 120, because both executables ignore SIGPIPE. Four records run standard output on a pseudo-terminal of a given width with `COLUMNS` unset, so the help wraps at the width of the terminal. Arguments that are not UTF-8 decode as Python's `surrogateescape` does, and an error message shows such a byte as `\udcff`. A `COLUMNS` value above the range of `long` means a width that never wraps, as a Python int does.
+
+Other records run in the process and compare the line that an uncaught exception prints. They hold 2,016 malformed and valid overlay JSON texts, 4,863 byte strings decoded as UTF-8, and 157 malformed regular expressions and replacement templates. So the `json.decoder.JSONDecodeError` message with its line, column and code-point position, the `UnicodeDecodeError` byte range and reason, and the `re.error` position match Python. The test `cli_process` checks two cases that no golden can hold: without the tugalex or bifonia data, the executable prints one error line and exits with status 1, and the benchmark exits with status 120 when standard output is `/dev/full`.
+
+The acceptance sentence is "Tenho 23 anos, Sr. Silva; li o Cap. XII.". The Python command line has no `--contact` flag, so the contact modes of this sentence are in the `phonemize_sentence` records. The command-line records hold the sentence in every lect, and the `--contact` arguments as the error that argparse gives.
+
+Every package and plugin record matches with the orthography2ipa.cpp submodule pin, with no listed divergence.
+
+## The benchmark
+
+`tugaphone_benchmark` is the port of `scripts/benchmark.py`. It reads the gold fixtures in `tests/data/gold/`, scores the rules-only transcription of each word, and writes `benchmarks/results.json` and `docs/scoreboard.md` under the directory it runs in. `TUGAPHONE_BENCHMARK_ROOT` names another directory. `--refresh-fixtures` downloads the gold in Python. The C++ tool does not download, so it prints a message and exits with status 2.
+
+The goldens hold every fixture word with its transcription, edit distance, stress result and confusion pairs. They hold probes of the scoring helpers, including strings of 200 code points and more for the difflib "popular element" rule, `score_dialect` with 8 limits, and 35 runs of `main`. A run with no arguments gives the same summary lines and the same two report files, byte for byte. When `main` raises, the record holds the last line of the traceback, with the scratch root as `<root>`. Two runs have a regular file where `main` makes the `benchmarks` directory: the run that writes the reports prints its summary lines, then `FileExistsError`. `--dialect` joins the fixture path as `os.path.join` does, so `--dialect /dev/null` reads `/dev/null.tsv`.
+
+The reports that the Python repository commits at the tag do not match what its script gives with the reference packages. For example, pt-BR has a PER of 0.2448 in the committed file and 0.2365 from the script. The C++ tool reproduces the script.
 
 ## Python defects kept for parity
 
@@ -185,22 +218,24 @@ The port keeps these defects of the reference release, because it is held at byt
 - `AccentOverlay.from_dict` writes any name with `str()`: a null name becomes "None".
 - The tokenizer gives a grapheme and a character an `idx_in_sentence` of `-1 + idx_in_word`. The value does not add the offset of the word in the sentence.
 - `is_grapheme_silent` compares the prefix with `"m"` and tests `after[0] in "cç"` for the archaic silent p. A direct call with the prefix `"m"` returns true. `CharToken.is_silent` gives the whole word prefix, so the rule never fires for a character of a word: `assumpção` keeps its p. The `mpt` words never match, because t is not in `"cç"`.
+- `scripts/benchmark.py --limit 0` formats a missing PER with `:.4f` and raises TypeError.
+- A negative `--limit` drops the last words of each fixture, as a Python slice does.
 
 ## API inventory
 
 `tools/inventory.py` writes the tables below from the reference package. It lists the public module-level names, the public methods and attributes of each public class, the CLI commands and flags, and the data files. A name that a module imports from another module is listed once, in the module that defines it. For each name in a ported module, the script checks that the C++ name is declared in `include/`.
 
-The status "phase 1", "phase 2" or "phase 3" means that the name is ported and in the goldens, and names the phase of the port that added it. The status "later phase" means that a later phase of the port adds it.
+The status names the phase of the port that adds the name. Each name in the tables is ported and in the goldens: 333 of 333 names.
 
 ### tugaphone (package)
 
 <!-- inventory:__init__ -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
-| `TugaPhonemizer` | class | none yet | later phase |
-| `TugaPhonemizer.phonemize_sentence` | method | none yet | later phase |
-| `TugaPhonemizer.force_accent` | method | none yet | later phase |
-| `TugaPhonemizer.is_supported` | method | none yet | later phase |
+| `TugaPhonemizer` | class | `tugaphone::TugaPhonemizer` | phase 4 |
+| `TugaPhonemizer.phonemize_sentence` | method | `tugaphone::TugaPhonemizer::phonemize_sentence` | phase 4 |
+| `TugaPhonemizer.force_accent` | method | `tugaphone::TugaPhonemizer::force_accent` | phase 4 |
+| `TugaPhonemizer.is_supported` | method | `tugaphone::TugaPhonemizer::is_supported` | phase 4 |
 <!-- /inventory:__init__ -->
 
 ### tugaphone.registry
@@ -607,31 +642,35 @@ orthography2ipa.cpp keeps its spec cache in a global map with no lock. The token
 
 ### tugaphone.plugin
 
+The OVOS plugin registration is not applicable. A Python package registers a plugin with an entry point, and C++ has no entry points. A C++ program that wants `SilabificadorSyllabifier` as the syllabifier of orthography2ipa.cpp calls `orthography2ipa::register_syllabifier_plugin`. orthography2ipa.cpp keeps its plugins in a global map with no lock, and the lock that tugaphone holds around a transcription is not in the installed headers. So the program registers the plugin before its first transcription, while it has one thread. tugaphone 1.4.16a1 itself declares no entry point: the `orthography2ipa.syllabify` group gets its Portuguese syllabifier from orthography2ipa.
+
 <!-- inventory:plugin -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
-| `TugaphoneG2PPlugin` | class | none yet | later phase |
-| `TugaphoneG2PPlugin.lang` | attribute | none yet | later phase |
-| `TugaphoneG2PPlugin.contact` | attribute | none yet | later phase |
-| `TugaphoneG2PPlugin.language_codes` | method | none yet | later phase |
-| `TugaphoneG2PPlugin.transcribe` | method | none yet | later phase |
-| `TugaphoneG2PPlugin.transcribe_word` | method | none yet | later phase |
-| `TugaphoneG2PPlugin.force_accent` | method | none yet | later phase |
-| `SilabificadorSyllabifier` | class | none yet | later phase |
-| `SilabificadorSyllabifier.language_codes` | method | none yet | later phase |
-| `SilabificadorSyllabifier.syllabify` | method | none yet | later phase |
+| `TugaphoneG2PPlugin` | class | `tugaphone::plugin::TugaphoneG2PPlugin` | phase 4 |
+| `TugaphoneG2PPlugin.lang` | attribute | `tugaphone::plugin::TugaphoneG2PPlugin::lang` | phase 4 |
+| `TugaphoneG2PPlugin.contact` | attribute | `tugaphone::plugin::TugaphoneG2PPlugin::contact` | phase 4 |
+| `TugaphoneG2PPlugin.language_codes` | method | `tugaphone::plugin::TugaphoneG2PPlugin::language_codes` | phase 4 |
+| `TugaphoneG2PPlugin.transcribe` | method | `tugaphone::plugin::TugaphoneG2PPlugin::transcribe` | phase 4 |
+| `TugaphoneG2PPlugin.transcribe_word` | method | `tugaphone::plugin::TugaphoneG2PPlugin::transcribe_word` | phase 4 |
+| `TugaphoneG2PPlugin.force_accent` | method | `tugaphone::plugin::TugaphoneG2PPlugin::force_accent` | phase 4 |
+| `SilabificadorSyllabifier` | class | `tugaphone::plugin::SilabificadorSyllabifier` | phase 4 |
+| `SilabificadorSyllabifier.language_codes` | method | `tugaphone::plugin::SilabificadorSyllabifier::language_codes` | phase 4 |
+| `SilabificadorSyllabifier.syllabify` | method | `tugaphone::plugin::SilabificadorSyllabifier::syllabify` | phase 4 |
 <!-- /inventory:plugin -->
 
 ### Command line
 
+The C++ executable `tugaphone` is the console script of the Python package, `python -m tugaphone`. `src/argparse.cpp` ports the parts of Python 3.12 argparse that the script uses: option abbreviations, `--`, the negative-number rule, the choices check, the usage and help layout for each `COLUMNS` width, and the error messages and exit status 2.
+
 <!-- inventory:cli -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
-| `tugaphone phonemize` | command | none yet | later phase |
-| `tugaphone force-accent` | command | none yet | later phase |
-| `tugaphone list` | command | none yet | later phase |
-| `--lect` | flag | none yet | later phase |
-| `--mode` | flag | none yet | later phase |
-| `--base` | flag | none yet | later phase |
-| `--overlay` | flag | none yet | later phase |
+| `tugaphone phonemize` | command | `tugaphone phonemize` | phase 4 |
+| `tugaphone force-accent` | command | `tugaphone force-accent` | phase 4 |
+| `tugaphone list` | command | `tugaphone list` | phase 4 |
+| `--lect` | flag | `tugaphone ... --lect` | phase 4 |
+| `--mode` | flag | `tugaphone ... --mode` | phase 4 |
+| `--base` | flag | `tugaphone ... --base` | phase 4 |
+| `--overlay` | flag | `tugaphone ... --overlay` | phase 4 |
 <!-- /inventory:cli -->

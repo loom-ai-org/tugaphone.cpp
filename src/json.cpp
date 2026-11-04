@@ -15,6 +15,7 @@ public:
     explicit Parser(std::string_view s) : s_(s) {}
 
     Value document() {
+        if (s_.substr(0, 3) == "\xEF\xBB\xBF") fail("Unexpected UTF-8 BOM (decode using utf-8-sig)", 0);
         skip_ws();
         Value v = value();
         skip_ws();
@@ -23,9 +24,25 @@ public:
     }
 
 private:
-    [[noreturn]] void fail(const std::string& what) const {
-        throw JSONDecodeError(what + " at byte " + std::to_string(p_));
+    // JSONDecodeError(msg, doc, pos): "<msg>: line L column C (char N)", with
+    // the position in code points.
+    [[noreturn]] void fail(const std::string& what, size_t at) const {
+        size_t pos = 0, lineno = 1, last_newline = 0;
+        bool newline = false;
+        for (size_t i = 0; i < at && i < s_.size(); ++i) {
+            if ((static_cast<unsigned char>(s_[i]) & 0xC0) == 0x80) continue;
+            if (s_[i] == '\n') {
+                ++lineno;
+                newline = true;
+                last_newline = pos;
+            }
+            ++pos;
+        }
+        const size_t colno = newline ? pos - last_newline : pos + 1;
+        throw JSONDecodeError(what + ": line " + std::to_string(lineno) + " column " + std::to_string(colno) +
+                              " (char " + std::to_string(pos) + ")");
     }
+    [[noreturn]] void fail(const std::string& what) const { fail(what, p_); }
     char peek() const { return p_ < s_.size() ? s_[p_] : '\0'; }
     bool eat(std::string_view word) {
         if (s_.substr(p_, word.size()) != word) return false;
@@ -169,8 +186,8 @@ private:
         }
     }
 
+    // Four hex digits after a "\\u" that ends before p_.
     unsigned hex4() {
-        if (p_ + 4 > s_.size()) fail("Invalid \\uXXXX escape");
         unsigned value = 0;
         for (size_t k = 0; k < 4; ++k) {
             const char c = s_[p_ + k];
@@ -182,7 +199,7 @@ private:
             } else if (c >= 'A' && c <= 'F') {
                 value |= static_cast<unsigned>(c - 'A' + 10);
             } else {
-                fail("Invalid \\uXXXX escape");
+                fail("Invalid \\uXXXX escape", p_ - 1);
             }
         }
         p_ += 4;
@@ -190,16 +207,17 @@ private:
     }
 
     std::string string() {
+        const size_t begin = p_;
         ++p_;  // the opening quote
         std::u32string out;
         while (true) {
-            if (p_ >= s_.size()) fail("Unterminated string");
+            if (p_ >= s_.size()) fail("Unterminated string starting at", begin);
             const char c = s_[p_];
             if (c == '"') {
                 ++p_;
                 return detail::to_utf8(out);
             }
-            if (static_cast<unsigned char>(c) < 0x20) fail("Invalid control character");
+            if (static_cast<unsigned char>(c) < 0x20) fail("Invalid control character at");
             if (c != '\\') {
                 // one UTF-8 sequence
                 size_t len = 1;
@@ -216,7 +234,8 @@ private:
                 continue;
             }
             ++p_;
-            const char e = peek();
+            if (p_ >= s_.size()) fail("Unterminated string starting at", begin);
+            const char e = s_[p_];
             ++p_;
             switch (e) {
                 case '"': out.push_back('"'); break;
@@ -228,8 +247,10 @@ private:
                 case 'r': out.push_back('\r'); break;
                 case 't': out.push_back('\t'); break;
                 case 'u': {
+                    // A closing quote must follow the four digits.
+                    if (p_ + 4 >= s_.size()) fail("Invalid \\uXXXX escape", p_ - 1);
                     unsigned cp = hex4();
-                    if (cp >= 0xD800 && cp < 0xDC00 && s_.substr(p_, 2) == "\\u") {
+                    if (cp >= 0xD800 && cp < 0xDC00 && p_ + 6 < s_.size() && s_.substr(p_, 2) == "\\u") {
                         const size_t save = p_;
                         p_ += 2;
                         const unsigned low = hex4();
@@ -243,7 +264,7 @@ private:
                     break;
                 }
                 default:
-                    fail("Invalid \\escape");
+                    fail("Invalid \\escape", p_ - 2);
             }
         }
     }

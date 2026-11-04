@@ -30,6 +30,10 @@ MODULES = [
     "accent",
     "lattice_core",
     "tokenizer",
+    "package",
+    "plugin",
+    "cli",
+    "benchmark",
 ]
 
 

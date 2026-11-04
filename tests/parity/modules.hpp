@@ -19,7 +19,11 @@
     X(codeswitch)                   \
     X(accent)                       \
     X(lattice_core)                 \
-    X(tokenizer)
+    X(tokenizer)                    \
+    X(package)                      \
+    X(plugin)                       \
+    X(cli)                          \
+    X(benchmark)
 
 namespace parity {
 #define TUGAPHONE_PARITY_DECLARE(name) std::string record_##name(const json_line::Value& line);

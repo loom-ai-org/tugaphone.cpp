@@ -1,0 +1,17 @@
+{
+  "name": "tweaks",
+  "transforms": [
+    {
+      "kind": "regex",
+      "pattern": "ʃ$",
+      "replacement": "s",
+      "stage": "ipa"
+    },
+    {
+      "kind": "word",
+      "pattern": "vinho",
+      "replacement": "binho",
+      "stage": "text"
+    }
+  ]
+}

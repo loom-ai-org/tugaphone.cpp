@@ -178,9 +178,32 @@ int flag_of(char32_t c) {
 constexpr int kTypeFlags = ASCII | LOCALE | UNICODE;
 constexpr int kGlobalFlags = 1 | 128;  // TEMPLATE | DEBUG
 
+// re.error(msg): an error with no position, as re._compiler raises it.
 [[noreturn]] void raise(const std::string& message) { throw error(message); }
 
+// re.error(msg, pattern, pos): the message gains " at position <pos>", and a
+// pattern with a newline adds the line and the column of that position.
+[[noreturn]] void raise_at(const std::string& message, U32View pattern, std::ptrdiff_t pos) {
+    std::string out = message + " at position " + std::to_string(pos);
+    if (pattern.find(U'\n') != U32View::npos) {
+        const size_t end = static_cast<size_t>(std::max<std::ptrdiff_t>(pos, 0));
+        const U32View head = pattern.substr(0, end);
+        const auto lineno = std::count(head.begin(), head.end(), U'\n') + 1;
+        const size_t last = head.rfind(U'\n');
+        const std::ptrdiff_t colno = pos - (last == U32View::npos ? -1 : static_cast<std::ptrdiff_t>(last));
+        out += " (line " + std::to_string(lineno) + ", column " + std::to_string(colno) + ")";
+    }
+    throw error(out);
+}
+
 std::string str(U32View s) { return detail::s8(s); }
+
+// "%d" % int(digits): the decimal digits without their leading zeros, of any
+// length.
+std::string decimal(const U32& digits) {
+    const size_t first = digits.find_first_not_of(U'0');
+    return first == U32::npos ? "0" : str(digits.substr(first));
+}
 
 // A token: one character, or a backslash and the character after it.
 using Token = std::optional<U32>;
@@ -212,9 +235,13 @@ public:
         if (frame_ + depth > kMaxFrame) throw Error("RecursionError", "maximum recursion depth exceeded");
     }
     // raise source.error(message): Tokenizer.error and its call of tell.
-    [[noreturn]] void error(const std::string& message) const {
+    // source.error(msg, offset): an error at tell() - offset.
+    [[noreturn]] void error(const std::string& message, size_t offset = 0) const {
         need(2);
-        raise(message);
+        raise_here(message, offset);
+    }
+    [[noreturn]] void raise_here(const std::string& message, size_t offset) const {
+        raise_at(message, s_, static_cast<std::ptrdiff_t>(tell()) - static_cast<std::ptrdiff_t>(offset));
     }
 
     const Token& next() const { return next_; }
@@ -245,13 +272,13 @@ public:
             Token c = get();
             if (!c) {
                 need(3);
-                if (result.empty()) raise("missing " + name);
-                raise("missing " + str(U32(1, terminator)) + ", unterminated name");
+                if (result.empty()) raise_here("missing " + name, 0);
+                raise_here("missing " + str(U32(1, terminator)) + ", unterminated name", result.size());
             }
             if (c->size() == 1 && (*c)[0] == terminator) {
                 if (result.empty()) {
                     need(3);
-                    raise("missing " + name);
+                    raise_here("missing " + name, 1);
                 }
                 break;
             }
@@ -264,10 +291,10 @@ public:
         index_ = index;
         advance();
     }
-    void checkgroupname(const U32& name) const {
+    void checkgroupname(const U32& name, size_t offset) const {
         if (!detail::is_identifier(name)) {
             need(3);
-            raise("bad character in group name " + detail::py_str_repr(name));
+            raise_here("bad character in group name " + detail::py_str_repr(name), name.size() + offset);
         }
     }
 
@@ -286,7 +313,7 @@ private:
             ++index;
             if (index >= s_.size()) {
                 need(3);
-                raise("bad escape (end of pattern)");
+                raise_at("bad escape (end of pattern)", s_, static_cast<std::ptrdiff_t>(s_.size()) - 1);
             }
             c += s_[index];
         }
@@ -356,23 +383,26 @@ std::optional<Code> hex_escape(Tokenizer& source, U32& escape) {
     const char32_t c = escape[1];
     if (c == U'x') {
         escape += source.getwhile(2, is_hex_digit);
-        if (escape.size() != 4) source.error("incomplete escape " + str(escape));
+        if (escape.size() != 4) source.error("incomplete escape " + str(escape), escape.size());
         return Code{Code::Lit, static_cast<char32_t>(parse_uint(escape.substr(2), 16))};
     }
     if (c == U'u') {
         escape += source.getwhile(4, is_hex_digit);
-        if (escape.size() != 6) source.error("incomplete escape " + str(escape));
+        if (escape.size() != 6) source.error("incomplete escape " + str(escape), escape.size());
         return Code{Code::Lit, static_cast<char32_t>(parse_uint(escape.substr(2), 16))};
     }
     if (c == U'U') {
         escape += source.getwhile(8, is_hex_digit);
-        if (escape.size() != 10) source.error("incomplete escape " + str(escape));
+        if (escape.size() != 10) source.error("incomplete escape " + str(escape), escape.size());
         const uint64_t v = parse_uint(escape.substr(2), 16);
-        if (v > 0x10FFFF) source.error("bad escape " + str(escape));
+        if (v > 0x10FFFF) source.error("bad escape " + str(escape), escape.size());
         return Code{Code::Lit, static_cast<char32_t>(v)};
     }
     if (c == U'N') {
-        source.need(2);  // Python reads on with match('{') or raises source.error
+        // The syntax errors are re._parser's; the name lookup is not ported.
+        source.need(2);  // match and getuntil
+        if (!source.match(U"{")) source.error("missing {");
+        source.getuntil(U'}', "character name");
         throw NotImplementedError("\\N{...} escapes are not supported");
     }
     return std::nullopt;
@@ -387,15 +417,15 @@ Code class_escape(Tokenizer& source, U32 escape) {
     if (is_oct_digit(c)) {
         escape += source.getwhile(2, is_oct_digit);
         const uint64_t v = parse_uint(escape.substr(1), 8);
-        if (v > 0377) source.error("octal escape value " + str(escape) + " outside of range 0-0o377");
+        if (v > 0377) source.error("octal escape value " + str(escape) + " outside of range 0-0o377", escape.size());
         return Code{Code::Lit, static_cast<char32_t>(v)};
     }
-    if (is_ascii_digit(c)) source.error("bad escape " + str(escape));
+    if (is_ascii_digit(c)) source.error("bad escape " + str(escape), escape.size());
     if (escape.size() == 2) {
-        if (is_ascii_letter(c)) source.error("bad escape " + str(escape));
+        if (is_ascii_letter(c)) source.error("bad escape " + str(escape), escape.size());
         return Code{Code::Lit, escape[1]};
     }
-    source.error("bad escape " + str(escape));
+    source.error("bad escape " + str(escape), escape.size());
 }
 
 void checklookbehindgroup(Tokenizer& source, const State& state, int gid) {
@@ -423,27 +453,27 @@ Code escape_code(Tokenizer& source, U32 escape, State& state) {
             if (is_oct_digit(escape[1]) && is_oct_digit(escape[2]) && is_oct_token(source.next())) {
                 escape += *source.get();
                 const uint64_t v = parse_uint(escape.substr(1), 8);
-                if (v > 0377) source.error("octal escape value " + str(escape) + " outside of range 0-0o377");
+                if (v > 0377) source.error("octal escape value " + str(escape) + " outside of range 0-0o377", escape.size());
                 return Code{Code::Lit, static_cast<char32_t>(v)};
             }
         }
         const uint64_t group = parse_uint(escape.substr(1), 10);
         if (group < static_cast<uint64_t>(state.groups())) {
             source.need(2);  // checkgroup and the groups property
-            if (!state.checkgroup(static_cast<int>(group))) source.error("cannot refer to an open group");
+            if (!state.checkgroup(static_cast<int>(group))) source.error("cannot refer to an open group", escape.size());
             checklookbehindgroup(source, state, static_cast<int>(group));
             Code code;
             code.kind = Code::Ref;
             code.group = static_cast<int>(group);
             return code;
         }
-        source.error("invalid group reference " + std::to_string(group));
+        source.error("invalid group reference " + std::to_string(group), escape.size() - 1);
     }
     if (escape.size() == 2) {
-        if (is_ascii_letter(c)) source.error("bad escape " + str(escape));
+        if (is_ascii_letter(c)) source.error("bad escape " + str(escape), escape.size());
         return Code{Code::Lit, escape[1]};
     }
-    source.error("bad escape " + str(escape));
+    source.error("bad escape " + str(escape), escape.size());
 }
 
 Node node_of(const Code& code) {
@@ -481,7 +511,7 @@ std::optional<std::pair<int, int>> parse_flags(Tokenizer& source, State& state, 
             ch = (*t)[0];
             if (t->size() == 1 && (ch == U')' || ch == U'-' || ch == U':')) break;
             if (t->size() != 1 || !flag_of(ch)) {
-                source.error((t->size() == 1 && detail::is_alpha(ch)) ? "unknown flag" : "missing -, : or )");
+                source.error((t->size() == 1 && detail::is_alpha(ch)) ? "unknown flag" : "missing -, : or )", t->size());
             }
         }
     }
@@ -489,12 +519,13 @@ std::optional<std::pair<int, int>> parse_flags(Tokenizer& source, State& state, 
         state.flags |= add_flags;
         return std::nullopt;
     }
-    if (add_flags & kGlobalFlags) source.error("bad inline flags: cannot turn on global flag");
+    if (add_flags & kGlobalFlags) source.error("bad inline flags: cannot turn on global flag", 1);
     if (ch == U'-') {
         t = source.get();
         if (!t) source.error("missing flag");
         ch = (*t)[0];
-        if (t->size() != 1 || !flag_of(ch)) source.error((t->size() == 1 && detail::is_alpha(ch)) ? "unknown flag" : "missing flag");
+        if (t->size() != 1 || !flag_of(ch))
+            source.error((t->size() == 1 && detail::is_alpha(ch)) ? "unknown flag" : "missing flag", t->size());
         while (true) {
             const int flag = flag_of(ch);
             if (flag & kTypeFlags) source.error("bad inline flags: cannot turn off flags 'a', 'u' and 'L'");
@@ -503,11 +534,12 @@ std::optional<std::pair<int, int>> parse_flags(Tokenizer& source, State& state, 
             if (!t) source.error("missing :");
             ch = (*t)[0];
             if (t->size() == 1 && ch == U':') break;
-            if (t->size() != 1 || !flag_of(ch)) source.error((t->size() == 1 && detail::is_alpha(ch)) ? "unknown flag" : "missing :");
+            if (t->size() != 1 || !flag_of(ch))
+                source.error((t->size() == 1 && detail::is_alpha(ch)) ? "unknown flag" : "missing :", t->size());
         }
     }
-    if (del_flags & kGlobalFlags) source.error("bad inline flags: cannot turn off global flag");
-    if (add_flags & del_flags) source.error("bad inline flags: flag turned on and off");
+    if (del_flags & kGlobalFlags) source.error("bad inline flags: cannot turn off global flag", 1);
+    if (add_flags & del_flags) source.error("bad inline flags: flag turned on and off", 1);
     return std::make_pair(add_flags, del_flags);
 }
 
@@ -515,6 +547,8 @@ bool is_token(const Token& t, char32_t c) { return t && t->size() == 1 && (*t)[0
 
 void parse_class(Tokenizer& source, Seq& out) {
     std::vector<SetItem> set;
+    const size_t here = source.tell() - 1;  // the "["
+    auto unterminated = [&] { source.error("unterminated character set", source.tell() - here); };
     const bool negate = source.match(U"^");
     auto to_item = [](const Code& code) {
         SetItem item;
@@ -529,7 +563,7 @@ void parse_class(Tokenizer& source, Seq& out) {
     };
     while (true) {
         Token t = source.get();
-        if (!t) raise("unterminated character set");
+        if (!t) unterminated();
         const U32 thiss = *t;
         if (thiss == U"]" && !set.empty()) break;
         Code code1;
@@ -540,7 +574,7 @@ void parse_class(Tokenizer& source, Seq& out) {
         }
         if (source.match(U"-")) {
             Token that = source.get();
-            if (!that) raise("unterminated character set");
+            if (!that) unterminated();
             if (*that == U"]") {
                 set.push_back(to_item(code1));
                 set.push_back(to_item(Code{Code::Lit, U'-'}));
@@ -553,7 +587,7 @@ void parse_class(Tokenizer& source, Seq& out) {
                 code2 = Code{Code::Lit, (*that)[0]};
             }
             if (code1.kind != Code::Lit || code2.kind != Code::Lit || code2.value < code1.value)
-                raise("bad character range " + str(thiss) + "-" + str(*that));
+                source.error("bad character range " + str(thiss) + "-" + str(*that), thiss.size() + 1 + that->size());
             SetItem range;
             range.kind = SetItem::Range;
             range.lo = code1.value;
@@ -602,6 +636,7 @@ struct ParseCall {
     char32_t look = 0;
     bool lookbehind_set = false;  // this lookbehind set state.lookbehindgroups
     Node cond;                    // the GroupRefExists that the call above fills
+    size_t start = 0;             // the position of the "(" of that group
 };
 
 struct ChildCall {
@@ -685,11 +720,11 @@ std::optional<ChildCall> parse_items(Tokenizer& source, State& state, ParseCall&
                 if (!hi.empty()) {
                     max = parse_uint(hi, 10);
                     if (max >= kMaxRepeat) throw Error("OverflowError", "the repetition number is too large");
-                    if (max < min) raise("min repeat greater than max repeat");
+                    if (max < min) source.error("min repeat greater than max repeat", source.tell() - here);
                 }
             }
-            if (sub.empty() || sub.back().op == Op::At) raise("nothing to repeat");
-            if (sub.back().op == Op::Repeat) raise("multiple repeat");
+            if (sub.empty() || sub.back().op == Op::At) source.error("nothing to repeat", source.tell() - here + thiss.size());
+            if (sub.back().op == Op::Repeat) source.error("multiple repeat", source.tell() - here + thiss.size());
             Seq item;
             Node& last = sub.back();
             if (last.op == Op::Subpattern && last.group == 0 && !last.add_flags && !last.del_flags) {
@@ -715,25 +750,27 @@ std::optional<ChildCall> parse_items(Tokenizer& source, State& state, ParseCall&
             n.op = Op::Any;
             sub.push_back(n);
         } else if (c == U'(') {
+            const size_t start = source.tell() - 1;
             bool capture = true, atomic = false;
             std::optional<U32> name;
             int add_flags = 0, del_flags = 0;
             if (source.match(U"?")) {
                 Token ct = source.get();
-                if (!ct) raise("unexpected end of pattern");
+                if (!ct) source.error("unexpected end of pattern");
                 const U32 chs = *ct;
                 const char32_t ch = chs[0];
                 const bool plain = chs.size() == 1;
                 if (plain && ch == U'P') {
                     if (source.match(U"<")) {
                         name = source.getuntil(U'>', "group name");
-                        source.checkgroupname(*name);
+                        source.checkgroupname(*name, 1);
                     } else if (source.match(U"=")) {
                         const U32 ref = source.getuntil(U')', "group name");
-                        source.checkgroupname(ref);
+                        source.checkgroupname(ref, 1);
                         const auto it = state.groupdict.find(ref);
-                        if (it == state.groupdict.end()) raise("unknown group name " + detail::py_str_repr(ref));
-                        if (!state.checkgroup(it->second)) raise("cannot refer to an open group");
+                        if (it == state.groupdict.end())
+                            source.error("unknown group name " + detail::py_str_repr(ref), ref.size() + 1);
+                        if (!state.checkgroup(it->second)) source.error("cannot refer to an open group", ref.size() + 1);
                         checklookbehindgroup(source, state, it->second);
                         Node n;
                         n.op = Op::GroupRef;
@@ -742,14 +779,14 @@ std::optional<ChildCall> parse_items(Tokenizer& source, State& state, ParseCall&
                         continue;
                     } else {
                         Token t = source.get();
-                        if (!t) raise("unexpected end of pattern");
-                        raise("unknown extension ?P" + str(*t));
+                        if (!t) source.error("unexpected end of pattern");
+                        source.error("unknown extension ?P" + str(*t), t->size() + 2);
                     }
                 } else if (plain && ch == U':') {
                     capture = false;
                 } else if (plain && ch == U'#') {
                     while (true) {
-                        if (!source.next()) raise("missing ), unterminated comment");
+                        if (!source.next()) source.error("missing ), unterminated comment", source.tell() - start);
                         if (is_token(source.get(), U')')) break;
                     }
                     continue;
@@ -759,13 +796,14 @@ std::optional<ChildCall> parse_items(Tokenizer& source, State& state, ParseCall&
                     std::optional<int> saved_lookbehind = state.lookbehindgroups;
                     if (ch == U'<') {
                         Token t = source.get();
-                        if (!t) raise("unexpected end of pattern");
-                        if (!(is_token(t, U'=') || is_token(t, U'!'))) raise("unknown extension ?<" + str(*t));
+                        if (!t) source.error("unexpected end of pattern");
+                        if (!(is_token(t, U'=') || is_token(t, U'!'))) source.error("unknown extension ?<" + str(*t), t->size() + 2);
                         kind = (*t)[0];
                         dir = -1;
                         if (!saved_lookbehind) state.lookbehindgroups = state.groups();
                     }
                     call.open = ParseCall::Open::Look;
+                    call.start = start;
                     call.dir = dir;
                     call.look = kind;
                     call.lookbehind_set = dir < 0 && !saved_lookbehind;
@@ -775,19 +813,21 @@ std::optional<ChildCall> parse_items(Tokenizer& source, State& state, ParseCall&
                     int condgroup;
                     const bool numeric = std::all_of(condname.begin(), condname.end(), is_ascii_digit);
                     if (!numeric) {
-                        source.checkgroupname(condname);
+                        source.checkgroupname(condname, 1);
                         const auto it = state.groupdict.find(condname);
-                        if (it == state.groupdict.end()) raise("unknown group name " + detail::py_str_repr(condname));
+                        if (it == state.groupdict.end())
+                            source.error("unknown group name " + detail::py_str_repr(condname), condname.size() + 1);
                         condgroup = it->second;
                     } else {
                         const uint64_t g = parse_uint(condname, 10);
-                        if (g == 0) raise("bad group number");
-                        if (g >= kMaxGroups) raise("invalid group reference " + str(condname));
-                        if (!state.grouprefpos.count(g)) state.grouprefpos[g] = source.tell();
+                        if (g == 0) source.error("bad group number", condname.size() + 1);
+                        if (g >= kMaxGroups) source.error("invalid group reference " + decimal(condname), condname.size() + 1);
+                        if (!state.grouprefpos.count(g)) state.grouprefpos[g] = source.tell() - condname.size() - 1;
                         condgroup = static_cast<int>(g);
                     }
                     checklookbehindgroup(source, state, condgroup);
                     call.open = ParseCall::Open::CondYes;
+                    call.start = start;
                     call.cond = Node();
                     call.cond.op = Op::GroupRefExists;
                     call.cond.group = condgroup;
@@ -798,7 +838,8 @@ std::optional<ChildCall> parse_items(Tokenizer& source, State& state, ParseCall&
                 } else if (plain && (flag_of(ch) || ch == U'-')) {
                     const auto flags = parse_flags(source, state, ch);
                     if (!flags) {
-                        if (!first || !sub.empty()) raise("global flags not at the start of the expression");
+                        if (!first || !sub.empty())
+                            source.error("global flags not at the start of the expression", source.tell() - start);
                         verbose = state.flags & VERBOSE;
                         continue;
                     }
@@ -806,7 +847,7 @@ std::optional<ChildCall> parse_items(Tokenizer& source, State& state, ParseCall&
                     del_flags = flags->second;
                     capture = false;
                 } else {
-                    raise("unknown extension ?" + str(chs));
+                    source.error("unknown extension ?" + str(chs), chs.size() + 1);
                 }
             }
             int group = 0;
@@ -815,12 +856,17 @@ std::optional<ChildCall> parse_items(Tokenizer& source, State& state, ParseCall&
                 state.groupwidths.emplace_back(std::nullopt);
                 if (static_cast<uint64_t>(state.groups()) > kMaxGroups) raise("too many groups");
                 if (name) {
-                    if (state.groupdict.count(*name)) raise("redefinition of group name " + detail::py_str_repr(*name));
+                    if (const auto it = state.groupdict.find(*name); it != state.groupdict.end()) {
+                        source.error("redefinition of group name " + detail::py_str_repr(*name) + " as group " +
+                                         std::to_string(group) + "; was group " + std::to_string(it->second),
+                                     name->size() + 1);
+                    }
                     state.groupdict[*name] = group;
                 }
             }
             const bool sub_verbose = (verbose || (add_flags & VERBOSE)) && !(del_flags & VERBOSE);
             call.open = ParseCall::Open::Group;
+            call.start = start;
             call.group = group;
             call.atomic = atomic;
             call.add_flags = add_flags;
@@ -847,7 +893,7 @@ std::optional<ChildCall> close_group(Tokenizer& source, State& state, ParseCall&
     Node n;
     switch (call.open) {
         case ParseCall::Open::Group:
-            if (!source.match(U")")) raise("missing ), unterminated subpattern");
+            if (!source.match(U")")) source.error("missing ), unterminated subpattern", source.tell() - call.start);
             if (call.group) state.groupwidths[static_cast<size_t>(call.group)] = getwidth(body, state);
             n.op = call.atomic ? Op::Atomic : Op::Subpattern;
             n.group = call.group;
@@ -857,7 +903,7 @@ std::optional<ChildCall> close_group(Tokenizer& source, State& state, ParseCall&
             break;
         case ParseCall::Open::Look:
             if (call.lookbehind_set) state.lookbehindgroups.reset();
-            if (!source.match(U")")) raise("missing ), unterminated subpattern");
+            if (!source.match(U")")) source.error("missing ), unterminated subpattern", source.tell() - call.start);
             n.op = call.look == U'=' ? Op::Assert : Op::AssertNot;
             n.dir = call.dir;
             n.kids.push_back(std::move(body));
@@ -868,14 +914,14 @@ std::optional<ChildCall> close_group(Tokenizer& source, State& state, ParseCall&
                 call.open = ParseCall::Open::CondNo;
                 return ChildCall{false, call.nested + 1, call.verbose, false};
             }
-            if (!source.match(U")")) raise("missing ), unterminated subpattern");
+            if (!source.match(U")")) source.error("missing ), unterminated subpattern", source.tell() - call.start);
             n = std::move(call.cond);
             break;
         case ParseCall::Open::CondNo:
             call.cond.kids.push_back(std::move(body));
             call.cond.has_no = true;
-            if (is_token(source.next(), U'|')) raise("conditional backref with more than two branches");
-            if (!source.match(U")")) raise("missing ), unterminated subpattern");
+            if (is_token(source.next(), U'|')) source.error("conditional backref with more than two branches");
+            if (!source.match(U")")) source.error("missing ), unterminated subpattern", source.tell() - call.start);
             n = std::move(call.cond);
             break;
         case ParseCall::Open::None:
@@ -1655,8 +1701,8 @@ Template parse_template(U32View repl, const Program& program, const std::map<U32
     Tokenizer s(repl);
     Template out;
     U32 literal;
-    auto addgroup = [&](uint64_t index) {
-        if (index > static_cast<uint64_t>(program.groups - 1)) raise("invalid group reference " + std::to_string(index));
+    auto addgroup = [&](uint64_t index, size_t pos) {
+        if (index > static_cast<uint64_t>(program.groups - 1)) s.error("invalid group reference " + std::to_string(index), pos);
         out.literals.push_back(literal);
         literal.clear();
         out.groups.push_back(static_cast<int>(index));
@@ -1668,20 +1714,20 @@ Template parse_template(U32View repl, const Program& program, const std::map<U32
         if (thiss[0] == U'\\' && thiss.size() == 2) {
             const char32_t c = thiss[1];
             if (c == U'g') {
-                if (!s.match(U"<")) raise("missing <");
+                if (!s.match(U"<")) s.error("missing <");
                 const U32 name = s.getuntil(U'>', "group name");
                 const bool numeric = std::all_of(name.begin(), name.end(), is_ascii_digit);
                 uint64_t index;
                 if (!numeric) {
-                    s.checkgroupname(name);
+                    s.checkgroupname(name, 1);
                     const auto it = groupindex.find(name);
                     if (it == groupindex.end()) throw IndexError("unknown group name " + detail::py_str_repr(name));
                     index = static_cast<uint64_t>(it->second);
                 } else {
                     index = parse_uint(name, 10);
-                    if (index >= kMaxGroups) raise("invalid group reference " + std::to_string(index));
+                    if (index >= kMaxGroups) s.error("invalid group reference " + decimal(name), name.size() + 1);
                 }
-                addgroup(index);
+                addgroup(index, name.size() + 1);
             } else if (c == U'0') {
                 if (is_oct_token(s.next())) {
                     thiss += *s.get();
@@ -1696,15 +1742,15 @@ Template parse_template(U32View repl, const Program& program, const std::map<U32
                         thiss += *s.get();
                         isoctal = true;
                         const uint64_t v = parse_uint(thiss.substr(1), 8);
-                        if (v > 0377) raise("octal escape value " + str(thiss) + " outside of range 0-0o377");
+                        if (v > 0377) s.error("octal escape value " + str(thiss) + " outside of range 0-0o377", thiss.size());
                         literal += static_cast<char32_t>(v);
                     }
                 }
-                if (!isoctal) addgroup(parse_uint(thiss.substr(1), 10));
+                if (!isoctal) addgroup(parse_uint(thiss.substr(1), 10), thiss.size() - 1);
             } else if (auto code = escapes(thiss)) {
                 literal += code->value;
             } else {
-                if (is_ascii_letter(c)) raise("bad escape " + str(thiss));
+                if (is_ascii_letter(c)) s.error("bad escape " + str(thiss), thiss.size());
                 literal += thiss;
             }
         } else {
@@ -1738,10 +1784,10 @@ Pattern::Pattern(U32View pattern, int flags) {
     } else if (final_flags & UNICODE) {
         throw ValueError("ASCII and UNICODE flags are incompatible");
     }
-    if (source.next()) raise("unbalanced parenthesis");
+    if (source.next()) source.error("unbalanced parenthesis");
     for (const auto& [g, pos] : state.grouprefpos) {
-        (void)pos;
-        if (g >= static_cast<uint64_t>(state.groups())) raise("invalid group reference " + std::to_string(g));
+        if (g >= static_cast<uint64_t>(state.groups()))
+            raise_at("invalid group reference " + std::to_string(g), pattern, static_cast<std::ptrdiff_t>(pos));
     }
     auto program = std::make_shared<ProgramWithNames>();
     program->code = compile_seq(p, final_flags, state);

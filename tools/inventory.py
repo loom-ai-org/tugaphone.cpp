@@ -10,7 +10,8 @@ too.
 Each row maps the name to its C++ name and a status. A module listed in
 PORTED has the status of the phase that ports it, and the script checks that
 each C++ name is declared under include/. Every other module has the status
-"later phase".
+"later phase". The CLI rows name the commands and flags of the C++ executable
+`tugaphone`, which src/cli.cpp builds.
 
 PARITY.md holds one section per module. The script replaces the text
 between "<!-- inventory:<module> -->" and "<!-- /inventory:<module> -->" and
@@ -30,7 +31,8 @@ PKG = pathlib.Path(tugaphone.__file__).parent
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PORTED = {"registry": "phase 1", "dialects": "phase 1", "text_normalization": "phase 1", "number_utils": "phase 1",
           "version": "phase 1", "langdetect": "phase 3", "codeswitch": "phase 3", "accent": "phase 3",
-          "lattice_core": "phase 2", "tokenizer": "phase 2"}
+          "lattice_core": "phase 2", "tokenizer": "phase 2", "__init__": "phase 4", "plugin": "phase 4"}
+CLI_STATUS = "phase 4"
 # Python names whose C++ form is not <namespace>::<name>.
 CPP_NAMES = {
     ("dialects", "LEXICON"): "tugaphone::dialects::LEXICON()",
@@ -48,6 +50,10 @@ CPP_NAMES = {
     ("accent", "AccentOverlay.to_dict"): "tugaphone::accent::AccentOverlay::to_dict_json",
     ("accent", "AccentOverlay.from_dict"): "tugaphone::accent::AccentOverlay::from_dict_json",
     ("tokenizer", "PRONOUNCED_QU_GU_U"): "tugaphone::tokenizer::PRONOUNCED_QU_GU_U()",
+    ("__init__", "TugaPhonemizer"): "tugaphone::TugaPhonemizer",
+    ("__init__", "TugaPhonemizer.phonemize_sentence"): "tugaphone::TugaPhonemizer::phonemize_sentence",
+    ("__init__", "TugaPhonemizer.force_accent"): "tugaphone::TugaPhonemizer::force_accent",
+    ("__init__", "TugaPhonemizer.is_supported"): "tugaphone::TugaPhonemizer::is_supported",
 }
 CALLABLE_SETS = {"LABEL_HEADS", "PLURAL_FUNCTION_WORDS", "FEMININE_DETERMINERS", "MASCULINE_DETERMINERS",
                  "FUNCTION_WORDS", "RANGE_LINKS", "UNIT_NAMES"}
@@ -143,8 +149,12 @@ def cli_table():
     items = [(f"tugaphone {c}", "command") for c in re.findall(r'add_parser\(\s*"([a-z-]+)"', source)]
     items += [(f"{a}", "flag") for a in dict.fromkeys(re.findall(r'add_argument\(\s*"(--[a-z-]+)"', source))]
     for name, kind in items:
-        lines.append(f"| `{name}` | {kind} | none yet | later phase |")
-    return lines, {"later phase": len(items)}
+        if not re.search(rf'"{re.escape(name.removeprefix("tugaphone "))}"', (ROOT / "src" / "cli.cpp").read_text(
+                encoding="utf-8").replace('U"', '"')):
+            raise SystemExit(f"{name}: src/cli.cpp does not define it")
+        cpp = name if kind == "command" else f"tugaphone ... {name}"
+        lines.append(f"| `{name}` | {kind} | `{cpp}` | {CLI_STATUS} |")
+    return lines, {CLI_STATUS: len(items)}
 
 
 def data_readers(rel):

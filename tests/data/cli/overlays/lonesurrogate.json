@@ -1,0 +1,1 @@
+{"name":"t","transforms":[{"kind":"word","pattern":"vinho","replacement":"\ud800","stage":"text"}]}
