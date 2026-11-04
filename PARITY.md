@@ -158,14 +158,12 @@ The goldens of the engine are these:
 | A numeral next to a homograph, through the 41 lects and contact mode auto | 688 |
 | `engine(lect).sentence_lattice()` and `engine(lect).features()` through 7 lects | 434 |
 | The normalizer, relayout, the stamp path, the lexicon files, the cache directory and the constants | 5,126 |
+| `_is_stale` on 336 stamps given as bytes, most of them not UTF-8 | 336 |
 | Unicode probes and a seeded fuzz set | 1,614 |
 
 Every engine record matches at the submodule pin, so `tests/parity/expected_divergences.tsv` lists no record. `engine(lect).features()` and `engine(lect).sentence_lattice()` apply the tugaphone normalizer through the plugin override, as `transcribe()` does, and the goldens call both methods with numbers, abbreviations and homographs.
 
-Two cache cases do not match Python:
-
-- A stamp file that is not UTF-8. Python raises `UnicodeDecodeError` from each `phonemize` call until the file is deleted. The port reads the stamp as stale and writes the cache again. A port of the crash would make a broken cache permanent, and no caller can depend on it.
-- A cache TSV that was not written by the engine, with a current stamp. orthography2ipa.cpp `load_lexicon` folds the case of each key, keeps a trailing carriage return and reads everything after the first tab. Python keeps the key as it is and skips a line that does not have two fields. The engine writes neither case, so only a TSV changed by hand reaches it. The difference is in orthography2ipa.cpp.
+One cache case does not match Python: a cache TSV that was not written by the engine, with a current stamp. orthography2ipa.cpp `load_lexicon` folds the case of each key, keeps a trailing carriage return and reads everything after the first tab. Python keeps the key as it is and skips a line that does not have two fields. The engine writes neither case, so only a TSV changed by hand reaches it. The difference is in orthography2ipa.cpp.
 
 orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads. The test `threads_tokenizer_codeswitch` builds tokenizer sentences in four threads and makes contact transcriptions in four others. CI runs the `threads_` tests under ThreadSanitizer. The test `threads_package` makes the first calls of ten package entry points in ten threads: the `TugaPhonemizer` methods, the plugin classes and the command line. With the lock made thread-local, ThreadSanitizer reports 35 races in it.
 
@@ -217,6 +215,7 @@ The port keeps these defects of the reference release, because it is held at byt
 - A `word` transform puts `\b` on each side of the pattern. A pattern that starts or ends with punctuation thus never matches between spaces.
 - `AccentOverlay.from_dict` writes any name with `str()`: a null name becomes "None".
 - The tokenizer gives a grapheme and a character an `idx_in_sentence` of `-1 + idx_in_word`. The value does not add the offset of the word in the sentence.
+- `_is_stale` decodes the stamp file as strict UTF-8 and catches only OSError. A stamp that is not UTF-8 raises UnicodeDecodeError, with the message that Python gives, from each `phonemize` call of the lect until the file is deleted. TigreGotico/tugaphone#174 fixes it in Python.
 - `is_grapheme_silent` compares the prefix with `"m"` and tests `after[0] in "cç"` for the archaic silent p. A direct call with the prefix `"m"` returns true. `CharToken.is_silent` gives the whole word prefix, so the rule never fires for a character of a word: `assumpção` keeps its p. The `mpt` words never match, because t is not in `"cç"`.
 - `scripts/benchmark.py --limit 0` formats a missing PER with `:.4f` and raises TypeError.
 - A negative `--limit` drops the last words of each fixture, as a Python slice does.

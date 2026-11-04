@@ -4,6 +4,7 @@ Run it with TUGAPHONE_LEXICON_DIR pointing at a scratch directory, so the
 lexicon TSVs are not written to the user's cache.
 """
 import os
+import random
 import subprocess
 import sys
 import tempfile
@@ -134,6 +135,38 @@ def lexicon_records():
     return out
 
 
+def stamp_bytes_records():
+    """_is_stale on stamps given as bytes, most of them not UTF-8.
+
+    The record holds the stamp as hex. A decode error is recorded with its
+    message, which names the byte range and the reason.
+    """
+    version = lc._tugalex_version().encode()
+    stamps = [version, b"\xef\xbb\xbf" + version, b"0", b"", b"\x00" + version, version + b"\x80",
+              version + b"\n\xff\n", b" \xa0" + version, version[:3] + b"\xe4" + version[3:],
+              b"\xff", b"\x80", b"\xbf", b"\xc0\xaf", b"\xc1\xbf", b"\xc2", b"\xc2\x41", b"\xdf\xc0",
+              b"\xe0\x80\x80", b"\xe0\x9f\xbf", b"\xe0\xa0", b"\xe0\xa0\x41", b"\xe1\x80\xc0",
+              b"\xed\x9f\xbf", b"\xed\xa0\x80", b"\xef\xbf", b"\xf0\x80\x80\x80", b"\xf0\x8f\xbf\xbf",
+              b"\xf0\x90", b"\xf0\x90\x80", b"\xf0\x90\x80\x41", b"\xf0\x90\x41", b"\xf4\x8f\xbf",
+              b"\xf4\x90\x80\x80", b"\xf5\x80\x80\x80", b"\xf8\x88\x80\x80\x80", b"\xfe\xff"]
+    pool = [0x00, 0x30, 0x41, 0x7F, 0x80, 0x8F, 0x90, 0x9F, 0xA0, 0xBF, 0xC0, 0xC1, 0xC2, 0xDF, 0xE0, 0xE1,
+            0xEC, 0xED, 0xEE, 0xEF, 0xF0, 0xF1, 0xF3, 0xF4, 0xF5, 0xFF]
+    rng = random.Random(20261103)
+    stamps += [bytes(rng.choice(pool) for _ in range(rng.randint(1, 8))) for _ in range(300)]
+    out = []
+    with tempfile.TemporaryDirectory() as tmp:
+        path = lc.Path(tmp) / "x.tsv"
+        path.write_bytes(b"a\tb\n")
+        for stamp in stamps:
+            lc._stamp_path(path).write_bytes(stamp)
+            try:
+                result = lc._is_stale(path)
+            except UnicodeDecodeError as exc:
+                result = {"err": type(exc).__name__, "msg": str(exc)}
+            out.append(["is_stale_bytes", stamp.hex(), result])
+    return out
+
+
 def relayout_inputs():
     lex = lc.LEXICON.get_ipa_map(region="lbx")
     words = sorted(lex)
@@ -212,6 +245,7 @@ def corpora(repo):
     out.append(("stamp_path", [["stamp_path", p, common.call(lambda: str(lc._stamp_path(lc.Path(p))))]
                                for p in paths]))
     out.append(("lexicon", lexicon_records()))
+    out.append(("stamp_bytes", stamp_bytes_records()))
     out.append(("lexicon_cache_dir", cache_dir_records()))
     out.append(("validate_contact", [["validate_contact", c, common.call(lc._validate_contact, c)]
                                      for c in contacts + ["auto", "es", "fr", "en"]]))
