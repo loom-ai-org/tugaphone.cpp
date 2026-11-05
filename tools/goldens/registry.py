@@ -1,6 +1,7 @@
 """Goldens of tugaphone.registry."""
 import warnings
 
+from orthography2ipa import registry as o2i_registry
 from tugaphone import registry
 
 from . import common
@@ -20,7 +21,26 @@ def codes(repo):
     probes = [p + "-" + p for p in common.UNICODE_PROBES] + ["pt-" + p for p in common.UNICODE_PROBES]
     fuzz = common.fuzz_strings(11, 400, "ptPTbrBRxX-_ aoAOmzMZtlTL", 16)
     return [("codes", common.unique(variants)), ("tests", common.unique(from_tests)),
-            ("unicode", common.unique(probes)), ("fuzz", common.unique(fuzz))]
+            ("unicode", common.unique(probes)), ("fuzz", common.unique(fuzz)), ("o2i_keys", o2i_keys())]
+
+
+def o2i_keys():
+    """Codes that orthography2ipa resolves exactly and codes it resolves only by nearest language.
+
+    resolve_lect accepts a code that is not canonical only when orthography2ipa
+    names a canonical dialect for it without a nearest-language guess: the old
+    key of a renamed spec, an ISO 639-3 alias, a standardized tag, the default
+    region of a bare tag. The other codes here resolve to a Portuguese dialect
+    only by distance, and must fall back by popping subtags.
+    """
+    keys = sorted({*o2i_registry._ALIASES, *o2i_registry._RENAMED})
+    regions = ["PT", "BR", "AO", "MZ", "TL", "CV", "GW", "ST", "MO", "GQ", "UY", "ES", "001", "419", "150", "XX"]
+    tags = [f"{lang}-{region}" for lang in ("pt", "por", "pt-Latn") for region in regions]
+    tags += ["por", "glg", "ext", "roa", "mwl", "pt-Latn", "pt-Brai", "pt-Latn-BR-x-sp", "por-BR-x-rj", "pt-001-x-porto"]
+    out = []
+    for code in keys + tags:
+        out += [code, code.lower(), code.upper(), code + "-x-unknown"]
+    return common.unique(out)
 
 
 def record(code):
