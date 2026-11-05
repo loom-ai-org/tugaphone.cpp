@@ -10,6 +10,7 @@
 #include "detail.hpp"
 #include "json.hpp"
 #include "o2i_registry.hpp"
+#include "text_normalization_internal.hpp"
 
 namespace tugaphone::codeswitch {
 
@@ -201,18 +202,24 @@ bool is_contact(std::string_view token, const langdetect::MarkovLangDetector* de
 
 std::vector<Run> split_runs(std::string_view text, std::string_view contact, std::string_view default_side,
                             const langdetect::MarkovLangDetector* detector) {
+    const std::vector<U32> tokens = detail::split_ws(detail::u(text));
     std::vector<Run> runs;
-    for (const U32& t : detail::split_ws(detail::u(text))) {
-        const std::string token = detail::s8(t);
-        if (contact == "none") {
-            runs.emplace_back(std::nullopt, token);
-        } else if (contact == "auto") {
-            runs.emplace_back(classify(token, default_side, detector), token);
-        } else {
-            std::optional<std::string> lang;
-            if (is_contact(token, detector)) lang = std::string(contact);
-            runs.emplace_back(lang, token);
-        }
+    if (contact == "none") {
+        for (const U32& t : tokens) runs.emplace_back(std::nullopt, detail::s8(t));
+        return runs;
+    }
+    auto route = [&](const std::string& token) -> std::optional<std::string> {
+        if (contact == "auto") return classify(token, default_side, detector);
+        if (is_contact(token, detector)) return std::string(contact);
+        return std::nullopt;
+    };
+    // An abbreviation that only Portuguese reads in its context stays
+    // Portuguese, so the normalizer expands it ("Cap. XII" reads "capítulo doze").
+    auto is_foreign = [&](const U32& word) { return route(detail::s8(word)).has_value(); };
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const std::string token = detail::s8(tokens[i]);
+        const bool keep = text_normalization::internal::stays_portuguese(tokens, i, is_foreign);
+        runs.emplace_back(keep ? std::nullopt : route(token), token);
     }
     return runs;
 }

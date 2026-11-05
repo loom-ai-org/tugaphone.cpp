@@ -5,9 +5,9 @@ namespace tugaphone::version {
 
 inline constexpr int VERSION_MAJOR = 1;
 inline constexpr int VERSION_MINOR = 4;
-inline constexpr int VERSION_BUILD = 19;
-inline constexpr int VERSION_ALPHA = 2;
+inline constexpr int VERSION_BUILD = 20;
+inline constexpr int VERSION_ALPHA = 1;
 // __version__
-inline constexpr const char* version = "1.4.19a2";
+inline constexpr const char* version = "1.4.20a1";
 
 }  // namespace tugaphone::version

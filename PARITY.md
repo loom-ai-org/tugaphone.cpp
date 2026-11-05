@@ -1,6 +1,6 @@
 # Parity with the Python tugaphone
 
-This port gives the same bytes as the Python package tugaphone 1.4.19a2 for each function it ports. The parity test proves this. It runs every golden record in C++ and compares the result with the Python output, byte for byte.
+This port gives the same bytes as the Python package tugaphone 1.4.20a1 for each function it ports. The parity test proves this. It runs every golden record in C++ and compares the result with the Python output, byte for byte.
 
 ## How parity is tested
 
@@ -8,7 +8,7 @@ The goldens are in `tests/goldens/<module>.jsonl.gz`, one file for each module. 
 
 The corpora for each module are these:
 
-- Every string literal of the reference tests, read from the tag `1.4.19a2`.
+- Every string literal of the reference tests, read from the tag `1.4.20a1`.
 - Every dialect and lect code, with case variants and aliases.
 - A rule-coverage set built from the module tables.
 - Each lexicon noun that ends in -agem or has a hyphen, after a number.
@@ -17,7 +17,7 @@ The corpora for each module are these:
 - The five version constants.
 - Unicode probes and a seeded fuzz set.
 
-The test `tugaphone_parity` prints one line for each module, such as `registry: 1625 in, 1625 checked, 0 mismatches, 0 expected divergences, 0 stale entries`. The test fails if a record has a mismatch, or if the number of records checked is not the count in the header. The file `tests/parity/expected_divergences.tsv` lists the records that do not match until a fix in a dependency lands, with the fix that each record waits on. A listed record does not fail the test. The test fails if a listed record matches or is not in the goldens. Then the entry must go from the list.
+The test `tugaphone_parity` prints one line for each module, such as `registry: 1628 in, 1628 checked, 0 mismatches, 0 expected divergences, 0 stale entries`. The test fails if a record has a mismatch, or if the number of records checked is not the count in the header. The file `tests/parity/expected_divergences.tsv` lists the records that do not match until a fix in a dependency lands, with the fix that each record waits on. A listed record does not fail the test. The test fails if a listed record matches or is not in the goldens. Then the entry must go from the list.
 
 ctest runs one test for each module, `parity_<module>`, so `ctest -j` runs the modules in parallel. Under ASan the engine goldens take more than an hour. The sanitizer job thus sets `TUGAPHONE_LATTICE_CORE_STRIDE`, and `--stride <n>` checks every n-th engine record. A listed divergence of a record that is not checked is not counted.
 
@@ -27,9 +27,9 @@ The header of each golden file names the reference versions:
 
 | Package | Version |
 | --- | --- |
-| tugaphone | 1.4.19a2 |
+| tugaphone | 1.4.20a1 |
 | tugalex | 2.2.2a1 |
-| orthography2ipa | 7.114.16a1 |
+| orthography2ipa | 7.117.12a1 |
 | silabificador | 2.1.1a5 |
 | bifonia | 0.3.8a1 |
 | ovos-number-parser | 0.24.3a1 |
@@ -94,6 +94,8 @@ The goldens hold the score and the detected language of many words. These are th
 
 `tugaphone.codeswitch` is ported in full, in `include/tugaphone/codeswitch.hpp`. `split_runs` uses the Markov detector when the models load, and the letter and stopword heuristics when they do not. The goldens cover both paths: the dumper replaces `langdetect.get_detector` with a function that returns None for the fallback path.
 
+In every contact mode except "none", `split_runs` keeps a token Portuguese when `text_normalization::stays_portuguese` claims it: an abbreviation that the normalizer expands in its context, and a reference marker with its number ("Cap. XII"). The router's decision for one word is the `is_foreign` argument. A single I, V or X after a marker is its number only when the router keeps the word before the marker and the word after the numeral Portuguese. The `abbreviations` corpora of text_normalization, codeswitch and package hold the sentences of `tests/test_codeswitch_abbreviations.py` and the review probes of TigreGotico/tugaphone#183, in every contact mode and with both classifiers. The `stays_portuguese` corpus calls the function with no foreign word, with each word foreign on its own, with every word foreign, and with the words the router sends out.
+
 `transcribe_contact` calls orthography2ipa.cpp for the contact lect (es-ES, fr-FR or en-US) and maps the result to Portuguese phones with the same tables. English words with an internal apostrophe, ASCII or U+2019, stay one word: `transcribe_contact("don't", "en")` gives "dant", as Python does. The goldens hold 216 such records.
 
 ## Accent forcing
@@ -155,13 +157,13 @@ The goldens of the engine are these:
 | --- | --- |
 | Each of the 42 lects over the 4,541 unique gold-TSV words | 190,722 |
 | Each gold-TSV row through the lect of its file | 10,093 |
-| The test strings through 7 lects | 10,549 |
+| The test strings through 7 lects | 11,081 |
 | Mixed-language text, 4 lects, contact modes auto, es, fr and en | 1,152 |
 | `respell_word` and `force_accent` with the default phonemizer | 92 |
 | Lect codes, contact codes and the contact loop with a fixed transcriber | 139 |
 | A numeral next to a homograph, through the 42 lects and contact mode auto | 704 |
 | `engine(lect).sentence_lattice()` and `engine(lect).features()` through 7 lects | 434 |
-| The normalizer, relayout, the stamp path, the lexicon files, the cache directory and the constants | 5,207 |
+| The normalizer, relayout, the stamp path, the lexicon files, the cache directory and the constants | 5,435 |
 | `_is_stale` on 336 stamps given as bytes, most of them not UTF-8 | 336 |
 | Unicode probes and a seeded fuzz set | 1,614 |
 
@@ -180,9 +182,10 @@ The goldens of these parts are these:
 | Corpus | Records |
 | --- | --- |
 | `phonemize_sentence` of each of the 42 lects over the 4,541 unique gold-TSV words, five contact modes in each record | 190,722 |
-| `phonemize_sentence` of each gold-TSV row and of the test strings through 7 lects | 20,642 |
+| `phonemize_sentence` of each gold-TSV row and of the test strings through 7 lects | 21,174 |
+| `phonemize_sentence` of the abbreviation sentences through 7 lects | 1,799 |
 | The acceptance sentence in each lect, `is_supported`, `regional_dialect`, `force_accent`, `respell` and the constants | 555 |
-| The plugin: `syllabify`, `transcribe`, `transcribe_word` with and without a context, `force_accent` and the constants | 9,346 |
+| The plugin: `syllabify`, `transcribe`, `transcribe_word` with and without a context, `force_accent` and the constants | 9,410 |
 | The command line: help at 15 `COLUMNS` values, 42 error cases at 2 widths, 169 runs, 8 runs with arguments that are not UTF-8, and 17 runs that fail outside argparse or change the environment | 443 |
 | The error lines of overlay JSON, UTF-8 decoding and regular expressions, in the process | 7,036 |
 
@@ -339,6 +342,7 @@ The status names the phase of the port that adds the name. Each name in the tabl
 | `normalize_number_separators` | function | `tugaphone::text_normalization::normalize_number_separators` | phase 1 |
 | `separate_unit_symbols` | function | `tugaphone::text_normalization::separate_unit_symbols` | phase 1 |
 | `expand_clock_times` | function | `tugaphone::text_normalization::expand_clock_times` | phase 1 |
+| `stays_portuguese` | function | `tugaphone::text_normalization::stays_portuguese` | phase 1 |
 | `expand_abbreviations` | function | `tugaphone::text_normalization::expand_abbreviations` | phase 1 |
 | `expand_regnal_numerals` | function | `tugaphone::text_normalization::expand_regnal_numerals` | phase 1 |
 | `expand_acronyms` | function | `tugaphone::text_normalization::expand_acronyms` | phase 1 |
@@ -413,15 +417,15 @@ The goldens use 13 dialects: the five national classes, the three city classes, 
 
 | Corpus | Records |
 | --- | --- |
-| Module functions and constants | 1,833 |
-| Test strings, token properties, national classes | 7,535 |
-| Test strings, IPA, the other eight dialects | 12,056 |
+| Module functions and constants | 1,909 |
+| Test strings, token properties, national classes | 7,915 |
+| Test strings, IPA, the other eight dialects | 12,664 |
 | The 4,541 unique words of the 10,093 gold-TSV rows, IPA, 13 dialects | 59,033 |
 | Every 20th gold-TSV word, token properties, national classes | 1,140 |
 | Unicode probes | 228 |
 | Seeded fuzz | 1,500 |
 | Tokens built directly, parent links, diaeresis vowels and rare graphemes | 308 |
-| Total | 83,633 |
+| Total | 84,697 |
 
 The rare graphemes are the tetragraphs of "Uruguai" and "quais", the triphthong of "saguão", the final o after a silent h in "Soho", and the atonic "pra". Only caller syllables, such as `["assu", "mpção"]`, put an archaic `mpç` or `mpt` grapheme in a word, so the goldens build these words with their syllables.
 
@@ -646,7 +650,7 @@ orthography2ipa.cpp keeps its spec cache in a global map with no lock. The token
 
 ### tugaphone.plugin
 
-The OVOS plugin registration is not applicable. A Python package registers a plugin with an entry point, and C++ has no entry points. A C++ program that wants `SilabificadorSyllabifier` as the syllabifier of orthography2ipa.cpp calls `orthography2ipa::register_syllabifier_plugin`. orthography2ipa.cpp keeps its plugins in a global map with no lock, and the lock that tugaphone holds around a transcription is not in the installed headers. So the program registers the plugin before its first transcription, while it has one thread. tugaphone 1.4.19a2 itself declares no entry point: the `orthography2ipa.syllabify` group gets its Portuguese syllabifier from orthography2ipa.
+The OVOS plugin registration is not applicable. A Python package registers a plugin with an entry point, and C++ has no entry points. A C++ program that wants `SilabificadorSyllabifier` as the syllabifier of orthography2ipa.cpp calls `orthography2ipa::register_syllabifier_plugin`. orthography2ipa.cpp keeps its plugins in a global map with no lock, and the lock that tugaphone holds around a transcription is not in the installed headers. So the program registers the plugin before its first transcription, while it has one thread. tugaphone 1.4.20a1 itself declares no entry point: the `orthography2ipa.syllabify` group gets its Portuguese syllabifier from orthography2ipa.
 
 <!-- inventory:plugin -->
 | Python name | Kind | C++ name | Status |

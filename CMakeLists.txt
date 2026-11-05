@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(tugaphone VERSION 1.4.19 LANGUAGES CXX)
+project(tugaphone VERSION 1.4.20 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

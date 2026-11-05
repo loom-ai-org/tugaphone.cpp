@@ -11,7 +11,7 @@ import tugaphone
 from tugaphone import TugaPhonemizer
 from tugaphone import accent, lattice_core, registry
 
-from . import common
+from . import abbreviation_corpus, common
 from .lattice_core import gold_rows
 
 MODES = ("none", "en", "es", "fr", "auto")
@@ -59,6 +59,8 @@ def corpora(repo):
     out.append(("gold", [sentence(ph, w, lect) for lect in lects for w in gold]))
     out.append(("gold_rows", [sentence(ph, w, lang) for w, lang in rows]))
     out.append(("tests", [sentence(ph, s, lang) for s in tests for lang in NATIONAL]))
+    out.append(("abbreviations", [sentence(ph, s, lang) for s in abbreviation_corpus.sentences(repo)
+                                  for lang in NATIONAL]))
     codes = ["", "pt", "PT-pt", "pt-pt-x-azores", "pt-br-x-rio", "pt-PT-x-unknown", "en-US", "pt_BR", "xx",
              "ext-PT-x-barrancos", "pt-BR-x-sp", "PT_br", " pt-BR ", "pt-PT-x-porto"] + lects
     out.append(("supported", [["is_supported", c, common.call(TugaPhonemizer.is_supported, c)] for c in codes] +

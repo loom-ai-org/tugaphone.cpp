@@ -1,15 +1,18 @@
 """Goldens of tugaphone.text_normalization.
 
-Each record runs every public function of the module on one text, each
-function on its own and the full chain, for one language code.
+A "text" record runs every text function of the module on one text, each
+function on its own and the full chain, for one language code. A
+"stays_portuguese" record holds the words, the index, the words that
+is_foreign calls foreign (null for the default argument) and the result.
 """
 import json
 import pathlib
 
+from tugaphone import codeswitch
 from tugaphone import text_normalization as tn
 from tugaphone.number_utils import NumberParser
 
-from . import common
+from . import abbreviation_corpus, common
 
 LANGS = ["pt-PT", "pt-BR", "PT-br", "pt-br-x-rio", "", "en", "pt-AO"]
 
@@ -26,6 +29,30 @@ def record(text, lang):
         common.call(tn.expand_letter_digit_codes, text, lang),
         common.call(tn.normalize_orthography, text, lang),
     ]]
+
+
+def stays_portuguese(words, i, foreign):
+    if foreign is None:
+        return ["stays_portuguese", words, i, None, common.call(tn.stays_portuguese, words, i)]
+    chosen = set(foreign)
+    return ["stays_portuguese", words, i, foreign,
+            common.call(tn.stays_portuguese, words, i, lambda word: word in chosen)]
+
+
+def stays_records(texts):
+    """Every index of every text, with no foreign word, each word foreign on
+    its own, every word foreign, and the words the router sends out."""
+    out = []
+    for text in texts:
+        words = text.split()
+        routed = [[w for w in words if codeswitch._classify(w, "en") is not None],
+                  [w for w in words if codeswitch._is_contact(w)]]
+        sets = common.unique(tuple(f) for f in [[], words] + [[w] for w in words] + routed)
+        for i in range(len(words)):
+            out.append(stays_portuguese(words, i, None))
+            out += [stays_portuguese(words, i, list(f)) for f in sets]
+        out.append(stays_portuguese(words, len(words), None))
+    return out
 
 
 def to_roman(n):
@@ -95,4 +122,11 @@ def corpora(repo):
            ("unicode", [record(t, "pt-PT") for t in probes]),
            ("edges", [record(f"A {t}", LANGS[i % 2]) for i, t in enumerate(edges)]),
            ("fuzz", [record(t, LANGS[i % len(LANGS)]) for i, t in enumerate(fuzz)])]
+    abbreviations = abbreviation_corpus.sentences(repo)
+    grid = abbreviation_corpus.marker_grid()
+    out += [("abbreviations", [record(t, lang) for t in abbreviations for lang in ("pt-PT", "pt-BR")]),
+            ("roman_heads", [record(t, lang) for t in abbreviation_corpus.roman_heads()
+                             for lang in ("pt-PT", "pt-BR")]),
+            ("marker_grid", [record(t, "pt-PT") for t in grid]),
+            ("stays_portuguese", stays_records(abbreviations + grid[::7]))]
     return out

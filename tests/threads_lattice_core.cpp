@@ -21,7 +21,7 @@ struct Call {
 int main() {
     const std::vector<Call> calls = {
         {"Fiz o download do software ontem.", "pt-BR", "auto", "ˈfis u dawnlowd du saftwɛɐɾ ˈõtẽj"},
-        {"O croissant estava délicieux, merci.", "pt-BR", "auto", "u kʁwasɐ̃ esˈtavɐ delisje meɾˈsi"},
+        {"O croissant estava délicieux, merci.", "pt-BR", "auto", "u kʁwasɐ̃ isˈtavɐ delisje meɾˈsi"},
         {"que rapidamente o rapaz falou", "pt-PT", "none", ""},
         {"que rapidamente o rapaz falou", "pt-AO", "none", ""},
         {"que rapidamente o rapaz falou", "pt-MZ", "none", ""},

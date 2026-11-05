@@ -28,7 +28,9 @@ std::string transcribe_contact(std::string_view word, std::string_view contact);
 using Run = std::pair<std::optional<std::string>, std::string>;
 // Split `text` on whitespace and route each token: contact "none" keeps every
 // token Portuguese, "auto" classifies each one, and "es", "fr" or "en" routes
-// every detected contact token through that language.
+// every detected contact token through that language. An abbreviation that
+// only Portuguese reads in its context stays Portuguese in every mode
+// (text_normalization::stays_portuguese): "Dr.", "Av.", "Cap." and its number.
 std::vector<Run> split_runs(std::string_view text, std::string_view contact, std::string_view default_side = "en");
 
 }  // namespace tugaphone::codeswitch
