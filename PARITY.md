@@ -17,7 +17,7 @@ The corpora for each module are these:
 - The five version constants.
 - Unicode probes and a seeded fuzz set.
 
-The test `tugaphone_parity` prints one line for each module, such as `registry: 797 in, 797 checked, 0 mismatches, 0 expected divergences, 0 stale entries`. The test fails if a record has a mismatch, or if the number of records checked is not the count in the header. The file `tests/parity/expected_divergences.tsv` lists the records that do not match until a fix in a dependency lands, with the fix that each record waits on. A listed record does not fail the test. The test fails if a listed record matches or is not in the goldens. Then the entry must go from the list.
+The test `tugaphone_parity` prints one line for each module, such as `registry: 1625 in, 1625 checked, 0 mismatches, 0 expected divergences, 0 stale entries`. The test fails if a record has a mismatch, or if the number of records checked is not the count in the header. The file `tests/parity/expected_divergences.tsv` lists the records that do not match until a fix in a dependency lands, with the fix that each record waits on. A listed record does not fail the test. The test fails if a listed record matches or is not in the goldens. Then the entry must go from the list.
 
 ctest runs one test for each module, `parity_<module>`, so `ctest -j` runs the modules in parallel. Under ASan the engine goldens take more than an hour. The sanitizer job thus sets `TUGAPHONE_LATTICE_CORE_STRIDE`, and `--stride <n>` checks every n-th engine record. A listed divergence of a record that is not checked is not counted.
 
@@ -153,15 +153,15 @@ The goldens of the engine are these:
 
 | Corpus | Records |
 | --- | --- |
-| Each of the 41 lects over the 4,541 unique gold-TSV words | 186,181 |
+| Each of the 42 lects over the 4,541 unique gold-TSV words | 190,722 |
 | Each gold-TSV row through the lect of its file | 10,093 |
-| The test strings through 7 lects | 10,360 |
+| The test strings through 7 lects | 10,549 |
 | Mixed-language text, 4 lects, contact modes auto, es, fr and en | 1,152 |
 | `respell_word` and `force_accent` with the default phonemizer | 92 |
 | Lect codes, contact codes and the contact loop with a fixed transcriber | 139 |
-| A numeral next to a homograph, through the 41 lects and contact mode auto | 688 |
+| A numeral next to a homograph, through the 42 lects and contact mode auto | 704 |
 | `engine(lect).sentence_lattice()` and `engine(lect).features()` through 7 lects | 434 |
-| The normalizer, relayout, the stamp path, the lexicon files, the cache directory and the constants | 5,126 |
+| The normalizer, relayout, the stamp path, the lexicon files, the cache directory and the constants | 5,207 |
 | `_is_stale` on 336 stamps given as bytes, most of them not UTF-8 | 336 |
 | Unicode probes and a seeded fuzz set | 1,614 |
 
@@ -179,11 +179,11 @@ The goldens of these parts are these:
 
 | Corpus | Records |
 | --- | --- |
-| `phonemize_sentence` of each of the 41 lects over the 4,541 unique gold-TSV words, five contact modes in each record | 186,181 |
-| `phonemize_sentence` of each gold-TSV row and of the test strings through 7 lects | 20,453 |
-| The acceptance sentence in each lect, `is_supported`, `regional_dialect`, `force_accent`, `respell` and the constants | 552 |
-| The plugin: `syllabify`, `transcribe`, `transcribe_word` with and without a context, `force_accent` and the constants | 9,322 |
-| The command line: help at 15 `COLUMNS` values, 42 error cases at 2 widths, 168 runs, 8 runs with arguments that are not UTF-8, and 17 runs that fail outside argparse or change the environment | 442 |
+| `phonemize_sentence` of each of the 42 lects over the 4,541 unique gold-TSV words, five contact modes in each record | 190,722 |
+| `phonemize_sentence` of each gold-TSV row and of the test strings through 7 lects | 20,642 |
+| The acceptance sentence in each lect, `is_supported`, `regional_dialect`, `force_accent`, `respell` and the constants | 555 |
+| The plugin: `syllabify`, `transcribe`, `transcribe_word` with and without a context, `force_accent` and the constants | 9,346 |
+| The command line: help at 15 `COLUMNS` values, 42 error cases at 2 widths, 169 runs, 8 runs with arguments that are not UTF-8, and 17 runs that fail outside argparse or change the environment | 443 |
 | The error lines of overlay JSON, UTF-8 decoding and regular expressions, in the process | 7,036 |
 
 The command-line records run `python -I -m tugaphone` and the C++ executable on the same arguments, and compare standard output, standard error and the exit status. When Python ends with a traceback, for example for an overlay file that does not exist, the record holds the last line of the traceback: the exception class and its message. The C++ executable prints that line alone and exits with status 1. The path of this repository reads as `<root>` in that line. This holds for the exceptions of the libraries too: an unclosed `<phoneme>` tag gives `orthography2ipa.markup.MarkupError`, and a lexicon cache that cannot be made gives the `OSError` subclass of its errno, with the path that failed.
@@ -413,15 +413,15 @@ The goldens use 13 dialects: the five national classes, the three city classes, 
 
 | Corpus | Records |
 | --- | --- |
-| Module functions and constants | 1,806 |
-| Test strings, token properties, national classes | 7,400 |
-| Test strings, IPA, the other eight dialects | 11,840 |
+| Module functions and constants | 1,833 |
+| Test strings, token properties, national classes | 7,535 |
+| Test strings, IPA, the other eight dialects | 12,056 |
 | The 4,541 unique words of the 10,093 gold-TSV rows, IPA, 13 dialects | 59,033 |
 | Every 20th gold-TSV word, token properties, national classes | 1,140 |
 | Unicode probes | 228 |
 | Seeded fuzz | 1,500 |
 | Tokens built directly, parent links, diaeresis vowels and rare graphemes | 308 |
-| Total | 83,255 |
+| Total | 83,633 |
 
 The rare graphemes are the tetragraphs of "Uruguai" and "quais", the triphthong of "saguão", the final o after a silent h in "Soho", and the atonic "pra". Only caller syllables, such as `["assu", "mpção"]`, put an archaic `mpç` or `mpt` grapheme in a word, so the goldens build these words with their syllables.
 
