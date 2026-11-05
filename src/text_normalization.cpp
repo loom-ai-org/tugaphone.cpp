@@ -4,6 +4,7 @@
 #include "tugaphone/text_normalization.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <optional>
 #include <mutex>
@@ -15,6 +16,7 @@
 
 #include "detail.hpp"
 #include "json.hpp"
+#include "text_normalization_internal.hpp"
 #include "tugaphone/number_utils.hpp"
 
 namespace tugaphone::text_normalization {
@@ -334,6 +336,15 @@ const std::map<U32, U32>& unconditional_abbreviations() {
     return m;
 }
 
+// Reference markers stand before the number of a part of a text ("cap. 3",
+// "art. 5.º", "séc. XIX"). Capitalised, they expand only before that number:
+// "Cap." before a name is also the military rank, and "Art." a name.
+const std::set<U32> kReferenceMarkers = {U"cap.", U"art.", U"fig.", U"pág.", U"págs.", U"séc.", U"tel."};
+// _CAPITALISED_MARKERS: each marker and its expansion, capitalised.
+const std::map<U32, U32> kCapitalisedMarkers = {
+    {U"Cap.", U"Capítulo"}, {U"Art.", U"Artigo"},   {U"Fig.", U"Figura"},   {U"Pág.", U"Página"},
+    {U"Págs.", U"Páginas"}, {U"Séc.", U"Século"},   {U"Tel.", U"Telefone"}};
+
 const std::set<U32> kLetterLabelNouns = {U"vitamina", U"letra", U"alínea", U"classe", U"grupo", U"tipo", U"plano"};
 
 const std::map<U32, std::pair<U32, U32>> kPossessives = {
@@ -343,10 +354,10 @@ const std::map<U32, std::pair<U32, U32>> kPossessives = {
     {U"S.", {U"Sua", U"Suas"}},
 };
 const std::map<U32, bool> kExcelenciaPlural = {{U"Ex.as", true}, {U"Exas.", true}, {U"Ex.ª", false}, {U"Exa.", false}};
-const U32 kAbbreviationTrail = U",;:!?)\"”";
-const U32 kLeadPunct = U"(“\"'¿¡";
-const U32 kTrailPunct = U".,;:!?)\"”";
-const U32 kTrailPunctWide = U".,;:!?)\"”…";
+const U32 kAbbreviationTrail = U",;:!?)\"”»";
+const U32 kLeadPunct = U"(“\"'¿¡«";
+const U32 kTrailPunct = U".,;:!?)\"”»";
+const U32 kTrailPunctWide = U".,;:!?)\"”»…";
 
 bool is_capitalised(U32View word) {
     const U32 core = detail::lstrip(word, kLeadPunct);
@@ -372,6 +383,14 @@ Edges split_edges(U32View w) {
     while (i < j && kLeadPunct.find(w[i]) != U32::npos) ++i;
     while (j > i && kTrailPunctWide.find(w[j - 1]) != U32::npos) --j;
     return {slice(w, 0, i), slice(w, i, j), slice(w, j, w.size())};
+}
+
+// _abbreviation_edges: (leading punctuation, abbreviation with its own period,
+// trailing punctuation). "(Cap." -> ("(", "Cap.", "").
+Edges abbreviation_edges(U32View word) {
+    const U32 body = detail::lstrip(word, kLeadPunct);
+    const U32 core = detail::rstrip(body, kAbbreviationTrail);
+    return {slice(word, 0, word.size() - body.size()), core, body.substr(core.size())};
 }
 
 // _split_trailing_punct.
@@ -514,6 +533,15 @@ bool converts(U32View numeral, const std::optional<U32>& prev_word, const std::v
     return numeral.size() >= 2 || (prev_word && given_name_gender(*prev_word).has_value());
 }
 
+// _head_gender: the gender of the name or noun a numeral follows. "Isabel II"
+// and "a figura II" take the feminine ordinal; a word of both genders, or one
+// tugalex does not know, gives masculine.
+std::string head_gender(U32View word) {
+    if (given_name_gender(word)) return name_gender(word);
+    const auto noun = tugalex::TugaLexicon::get_noun_gender(to_utf8(detail::lower(word)));
+    return noun && *noun == "f" ? "feminine" : "masculine";
+}
+
 std::string read_roman(long long value, const std::optional<U32>& prev_word, std::string_view lang) {
     std::optional<std::string> article;
     if (prev_word && !prev_word->empty()) {
@@ -529,7 +557,7 @@ std::string read_roman(long long value, const std::optional<U32>& prev_word, std
         as_ordinal = true;
     } else if (value <= 10) {
         auto it = kWorkParts.find(detail::lower(*prev_word));
-        gender = it != kWorkParts.end() ? it->second : name_gender(*prev_word);
+        gender = it != kWorkParts.end() ? it->second : head_gender(*prev_word);
         as_ordinal = true;
     } else {
         gender = "masculine";
@@ -602,7 +630,77 @@ std::optional<std::pair<U32, U32>> letter_digit_code(U32View core) {
     return std::nullopt;
 }
 
+// _is_number: a number in digits ("5", "5.º") or in Roman numerals.
+bool is_number(U32View word) {
+    const U32 core = split_edges(word).core;
+    return (!core.empty() && detail::is_digit(core[0])) || roman_value(core).has_value();
+}
+
+// _expansion: the words that the abbreviation words[i] stands for in its
+// context, or nullopt when words[i] is not read as an abbreviation there.
+std::optional<U32> expansion(const std::vector<U32>& words, size_t i) {
+    const U32 core = abbreviation_edges(words[i]).core;
+    const std::optional<U32> following =
+        i + 1 < words.size() ? std::optional<U32>(abbreviation_edges(words[i + 1]).core) : std::nullopt;
+    auto possessive = kPossessives.find(core);
+    if (possessive != kPossessives.end() && following && kExcelenciaPlural.count(*following)) {
+        return kExcelenciaPlural.at(*following) ? possessive->second.second : possessive->second.first;
+    }
+    auto unconditional = unconditional_abbreviations().find(core);
+    if (unconditional != unconditional_abbreviations().end()) return unconditional->second;
+    auto marker = kCapitalisedMarkers.find(core);
+    if (marker != kCapitalisedMarkers.end() && following && is_number(*following)) return marker->second;
+    const bool after_label = i > 0 && kLetterLabelNouns.count(detail::lower(abbreviation_edges(words[i - 1]).core));
+    if (core == U"D." && following && is_capitalised(words[i + 1]) && !after_label) {
+        return name_gender(split_edges(*following).core) == "feminine" ? U"Dona" : U"Dom";
+    }
+    return std::nullopt;
+}
+
+using IsForeign = std::function<bool(const U32&)>;
+
+// _is_marker_number: whether words[j] is the number of the reference marker
+// before it. A single I, V or X is also the English pronoun or a letter, so it
+// counts only when neither the word before the marker nor the word after the
+// numeral is foreign; punctuation after the numeral ends its phrase.
+bool is_marker_number(const std::vector<U32>& words, size_t j, const IsForeign& is_foreign) {
+    if (!is_number(words[j])) return false;
+    const Edges edges = split_edges(words[j]);
+    if (edges.core != U"I" && edges.core != U"V" && edges.core != U"X") return true;
+    if (j >= 2 && is_foreign(words[j - 2])) return false;
+    return !(edges.trail.empty() && j + 1 < words.size() && is_foreign(words[j + 1]));
+}
+
+bool is_portuguese_abbreviation(const std::vector<U32>& words, size_t i, const IsForeign& is_foreign) {
+    const U32 core = abbreviation_edges(words[i]).core;
+    if (core == U"R." || !expansion(words, i)) return false;
+    if (kReferenceMarkers.count(detail::lower(core))) {
+        return i + 1 < words.size() && is_marker_number(words, i + 1, is_foreign);
+    }
+    return true;
+}
+
 }  // namespace
+
+namespace internal {
+
+bool stays_portuguese(const std::vector<U32>& words, size_t i, const std::function<bool(const U32&)>& is_foreign) {
+    if (i >= words.size()) throw IndexError("list index out of range");
+    const IsForeign foreign = is_foreign ? is_foreign : [](const U32&) { return false; };
+    if (is_portuguese_abbreviation(words, i, foreign)) return true;
+    return i > 0 && kReferenceMarkers.count(detail::lower(abbreviation_edges(words[i - 1]).core)) &&
+           is_portuguese_abbreviation(words, i - 1, foreign);
+}
+
+}  // namespace internal
+
+bool stays_portuguese(const std::vector<std::string>& words, size_t i,
+                      const std::function<bool(const std::string&)>& is_foreign) {
+    std::vector<U32> words32;
+    for (const std::string& w : words) words32.push_back(from_utf8(w));
+    if (!is_foreign) return internal::stays_portuguese(words32, i, nullptr);
+    return internal::stays_portuguese(words32, i, [&](const U32& w) { return is_foreign(to_utf8(w)); });
+}
 
 std::string split_number_ranges(std::string_view text) {
     const U32 t = from_utf8(text);
@@ -649,33 +747,15 @@ std::string expand_clock_times(std::string_view text) { return to_utf8(clock_tim
 
 std::string expand_abbreviations(std::string_view text) {
     const std::vector<U32> words = detail::split_ws(from_utf8(text));
-    std::vector<U32> cores;
-    for (const U32& w : words) cores.push_back(detail::rstrip(w, kAbbreviationTrail));
     std::vector<U32> out;
     for (size_t i = 0; i < words.size(); ++i) {
-        const U32& w = words[i];
-        const U32& core = cores[i];
-        const U32 trail = w.substr(core.size());
-        const std::optional<U32> following = i + 1 < words.size() ? std::optional<U32>(cores[i + 1]) : std::nullopt;
-        auto possessive = kPossessives.find(core);
-        if (possessive != kPossessives.end() && following && kExcelenciaPlural.count(*following)) {
-            const bool plural = kExcelenciaPlural.at(*following);
-            out.push_back((plural ? possessive->second.second : possessive->second.first) + trail);
+        const auto expanded = expansion(words, i);
+        if (!expanded) {
+            out.push_back(words[i]);
             continue;
         }
-        auto unconditional = unconditional_abbreviations().find(core);
-        if (unconditional != unconditional_abbreviations().end()) {
-            out.push_back(unconditional->second + trail);
-            continue;
-        }
-        const bool honorific = core == U"D.";
-        const bool after_label = i > 0 && kLetterLabelNouns.count(detail::lower(cores[i - 1]));
-        if (honorific && following && is_capitalised(words[i + 1]) && !after_label) {
-            const U32 expansion = name_gender(split_edges(*following).core) == "feminine" ? U"Dona" : U"Dom";
-            out.push_back(expansion + trail);
-            continue;
-        }
-        out.push_back(w);
+        const Edges edges = abbreviation_edges(words[i]);
+        out.push_back(edges.lead + *expanded + edges.trail);
     }
     return to_utf8(detail::join(out, U" "));
 }
@@ -690,7 +770,7 @@ std::string expand_regnal_numerals(std::string_view text, std::string_view lang)
         const auto [core, trail] = split_trailing_punct(w);
         const auto value = roman_value(core);
         const std::optional<U32> prev_core =
-            i > 0 ? std::optional<U32>(split_trailing_punct(words[i - 1]).first) : std::nullopt;
+            i > 0 ? std::optional<U32>(split_edges(words[i - 1]).core) : std::nullopt;
         if (!value || !converts(core, prev_core, cores, i)) {
             out.push_back(w);
             continue;

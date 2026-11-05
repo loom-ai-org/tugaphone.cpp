@@ -18,7 +18,7 @@ import sys
 # linguatag and langcodes decide how orthography2ipa resolves a language code.
 REFERENCE = ("tugaphone", "tugalex", "orthography2ipa", "silabificador", "bifonia", "ovos-number-parser",
              "markovonnx", "linguatag", "langcodes")
-TAG = "1.4.19a2"
+TAG = "1.4.20a1"
 
 # Strings that exercise the code-point layer: case mappings that change the
 # length, final sigma, non-ASCII digits and spaces, combining marks, astral

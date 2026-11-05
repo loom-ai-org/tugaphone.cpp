@@ -8,7 +8,7 @@ import random
 import tugaphone.langdetect as langdetect
 from tugaphone import codeswitch
 
-from . import common, contact_corpus
+from . import abbreviation_corpus, common, contact_corpus
 
 SIDES = ["en", "es", "fr", "pt", "xx"]
 CONTACTS = ["none", "auto", "es", "fr", "en", "xx"]
@@ -90,6 +90,15 @@ def corpora(repo):
         for contact in CONTACTS:
             public.append(["split_runs_public", s, contact, "en",
                            [list(r) for r in codeswitch.split_runs(s, contact, default_side="en")]])
+    # Abbreviations and their numbers under every contact mode and both classifiers.
+    abbreviations = []
+    for path in ("detector", "fallback"):
+        ctx = Fallback() if path == "fallback" else contextlib.nullcontext()
+        with ctx:
+            for s in abbreviation_corpus.sentences(repo):
+                for contact in CONTACTS:
+                    abbreviations.append(["split_runs", s, contact, "en", path,
+                                          [list(r) for r in codeswitch.split_runs(s, contact, default_side="en")]])
     return [("constants", consts), ("heuristic", heuristic), ("nativize", nativize), ("routing", routing),
             ("split_runs", runs), ("transcribe_contact", transcribe), ("apostrophe", apostrophe),
-            ("split_runs_public", public)]
+            ("split_runs_public", public), ("abbreviations", abbreviations)]

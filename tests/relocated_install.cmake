@@ -9,13 +9,14 @@
 #      another install in <prefix>/../share/tugaphone;
 #   3. a shared build with a two-level CMAKE_INSTALL_LIBDIR, the command line
 #      copied outside the prefix.
-# Each prefix gets its own letter_expressions.json edited to list "cap XII" as
-# a letter expression, so the command line that reads it leaves the numeral as
-# a letter name. Every other copy of the data stays unedited: the source tree,
-# the working directory, the decoy of case 2, the configured prefix of cases
-# 2 and 3, and <prefix>/lib/share of case 3. A command line that reads any of
-# them prints the numeral, and the test fails. The expected line is the output
-# of the Python tugaphone of PARITY.md for the same arguments and data.
+# Each prefix gets its own letter_expressions.json edited to list "capítulo
+# XII" as a letter expression, so the command line that reads it leaves the
+# numeral as a letter name. Every other copy of the data stays unedited: the
+# source tree, the working directory, the decoy of case 2, the configured
+# prefix of cases 2 and 3, and <prefix>/lib/share of case 3. A command line
+# that reads any of them prints the numeral, and the test fails. The expected
+# line is the output of the Python tugaphone of PARITY.md for the same
+# arguments and data.
 if(PREFIX STREQUAL INSTALL_PREFIX)
     message(FATAL_ERROR "PREFIX must differ from CMAKE_INSTALL_PREFIX: ${PREFIX}")
 endif()
@@ -33,12 +34,14 @@ function(run)
     endif()
 endfunction()
 
-set(expected "ˈtɛɲu ˈvĩt i ˈtɾez ˈɐnuʃ sɨˈɲoɾ ˈsiɫvɐ ˈli o ˈkap ʃiˈi\n")
+set(expected "ˈtɛɲu ˈvĩt i ˈtɾez ˈɐnuʃ sɨˈɲoɾ ˈsiɫvɐ ˈli o kɐˈpitulu ʃiˈi\n")
 
-# Lists "cap XII" as a letter expression in the data directory *dir*.
+# Lists "capítulo XII" as a letter expression in the data directory *dir*.
+# "Cap." expands to "Capítulo" before the numeral rule reads the word before
+# "XII".
 function(edit_expressions dir)
     file(READ "${dir}/letter_expressions.json" expressions)
-    string(REPLACE "\"expressions\": {" "\"expressions\": {\"cap XII\": \"\"," edited "${expressions}")
+    string(REPLACE "\"expressions\": {" "\"expressions\": {\"capítulo XII\": \"\"," edited "${expressions}")
     if(edited STREQUAL expressions)
         message(FATAL_ERROR "${dir}/letter_expressions.json has no expressions object")
     endif()
