@@ -1,6 +1,6 @@
 # tugaphone.cpp
 
-A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package 1.4.16a1, byte for byte. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
+A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package 1.4.19a2, byte for byte. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
 
 The whole package is ported: the lattice phonemizer, the tokenizer, the dialect registry and inventories, text normalization, the number reader, the language detector, code-switching, accent forcing, the G2P plugin classes and the command line.
 

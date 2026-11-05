@@ -203,9 +203,9 @@ bool is_stale(const std::string& path) {
     std::string stamp;
     try {
         stamp = detail::pyio::read_text(stamp_path(target));
-    } catch (const Error& e) {
-        // except OSError: a stamp that cannot be read is stale.
-        if (e.python_type() == "UnicodeDecodeError") throw;
+    } catch (const Error&) {
+        // except (OSError, UnicodeDecodeError): a stamp that cannot be read or
+        // is not UTF-8 is stale.
         return true;
     }
     return s8(detail::strip_ws(u(stamp))) != tugalex_version();
@@ -259,7 +259,7 @@ void ensure_lexicon(const std::string& lect) {
 
 std::string normalize(std::string_view text, const std::string& lect) {
     const std::string orthography = text_normalization::normalize_orthography(text, lect);
-    return bifonia::add_extra_diacritics(number_utils::normalize_numbers(orthography, lect));
+    return bifonia::add_extra_diacritics(number_utils::normalize_numbers(orthography, lect), lect);
 }
 
 const o2i::G2P& engine(const std::string& lect) {

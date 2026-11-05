@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(tugaphone VERSION 1.4.16 LANGUAGES CXX)
+project(tugaphone VERSION 1.4.19 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -291,6 +291,11 @@ if(TUGAPHONE_BUILD_TESTS)
     target_link_libraries(tugaphone_threads_tokenizer_codeswitch PRIVATE tugaphone Threads::Threads)
     add_test(NAME threads_tokenizer_codeswitch COMMAND tugaphone_threads_tokenizer_codeswitch)
     set_tests_properties(threads_tokenizer_codeswitch PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
+
+    add_executable(tugaphone_threads_registry tests/threads_registry.cpp)
+    target_link_libraries(tugaphone_threads_registry PRIVATE tugaphone Threads::Threads)
+    add_test(NAME threads_registry COMMAND tugaphone_threads_registry)
+    set_tests_properties(threads_registry PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     # Installs into prefixes that are not CMAKE_INSTALL_PREFIX and runs the
     # installed command line with none of the data variables set. The builds
