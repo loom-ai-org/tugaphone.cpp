@@ -230,7 +230,7 @@ The port keeps these defects of the reference release, because it is held at byt
 
 `tools/inventory.py` writes the tables below from the reference package. It lists the public module-level names, the public methods and attributes of each public class, the CLI commands and flags, and the data files. A name that a module imports from another module is listed once, in the module that defines it. For each name in a ported module, the script checks that the C++ name is declared in `include/`.
 
-The status names the phase of the port that adds the name. Each name in the tables is ported and in the goldens: 333 of 333 names.
+The status names the phase of the port that adds the name. Each name in the tables is ported and in the goldens: 334 of 334 names.
 
 ### tugaphone (package)
 
