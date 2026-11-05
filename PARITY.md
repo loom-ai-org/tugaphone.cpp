@@ -1,6 +1,6 @@
 # Parity with the Python tugaphone
 
-This port gives the same bytes as the Python package tugaphone 1.4.16a1 for each function it ports. The parity test proves this. It runs every golden record in C++ and compares the result with the Python output, byte for byte.
+This port gives the same bytes as the Python package tugaphone 1.4.19a2 for each function it ports. The parity test proves this. It runs every golden record in C++ and compares the result with the Python output, byte for byte.
 
 ## How parity is tested
 
@@ -8,7 +8,7 @@ The goldens are in `tests/goldens/<module>.jsonl.gz`, one file for each module. 
 
 The corpora for each module are these:
 
-- Every string literal of the reference tests, read from the tag `1.4.16a1`.
+- Every string literal of the reference tests, read from the tag `1.4.19a2`.
 - Every dialect and lect code, with case variants and aliases.
 - A rule-coverage set built from the module tables.
 - Each lexicon noun that ends in -agem or has a hyphen, after a number.
@@ -17,7 +17,7 @@ The corpora for each module are these:
 - The five version constants.
 - Unicode probes and a seeded fuzz set.
 
-The test `tugaphone_parity` prints one line for each module, such as `registry: 797 in, 797 checked, 0 mismatches, 0 expected divergences, 0 stale entries`. The test fails if a record has a mismatch, or if the number of records checked is not the count in the header. The file `tests/parity/expected_divergences.tsv` lists the records that do not match until a fix in a dependency lands, with the fix that each record waits on. A listed record does not fail the test. The test fails if a listed record matches or is not in the goldens. Then the entry must go from the list.
+The test `tugaphone_parity` prints one line for each module, such as `registry: 1625 in, 1625 checked, 0 mismatches, 0 expected divergences, 0 stale entries`. The test fails if a record has a mismatch, or if the number of records checked is not the count in the header. The file `tests/parity/expected_divergences.tsv` lists the records that do not match until a fix in a dependency lands, with the fix that each record waits on. A listed record does not fail the test. The test fails if a listed record matches or is not in the goldens. Then the entry must go from the list.
 
 ctest runs one test for each module, `parity_<module>`, so `ctest -j` runs the modules in parallel. Under ASan the engine goldens take more than an hour. The sanitizer job thus sets `TUGAPHONE_LATTICE_CORE_STRIDE`, and `--stride <n>` checks every n-th engine record. A listed divergence of a record that is not checked is not counted.
 
@@ -27,13 +27,17 @@ The header of each golden file names the reference versions:
 
 | Package | Version |
 | --- | --- |
-| tugaphone | 1.4.16a1 |
+| tugaphone | 1.4.19a2 |
 | tugalex | 2.2.2a1 |
-| orthography2ipa | 7.111.14a1 |
-| silabificador | 2.1.1a2 |
-| bifonia | 0.3.7a1 |
+| orthography2ipa | 7.114.16a1 |
+| silabificador | 2.1.1a5 |
+| bifonia | 0.3.8a1 |
 | ovos-number-parser | 0.24.3a1 |
 | markovonnx | 1.0.2a1 |
+| linguatag | 0.1.5a1 |
+| langcodes | 3.5.1 |
+
+linguatag and langcodes decide how orthography2ipa resolves a language code. The submodules silabificador.cpp and bifonia.cpp are held to silabificador 2.1.1a2 and bifonia 0.3.7a1. Those releases differ from 2.1.1a5 and 0.3.8a1 only in docstrings, comments and `version.py`, and no tugaphone output contains their version. tugalex stays at 2.2.2a1, the release of tugalex.cpp, because tugaphone writes the tugalex version into the lexicon stamp.
 
 ## Python semantics the port keeps
 
@@ -149,15 +153,15 @@ The goldens of the engine are these:
 
 | Corpus | Records |
 | --- | --- |
-| Each of the 41 lects over the 4,541 unique gold-TSV words | 186,181 |
+| Each of the 42 lects over the 4,541 unique gold-TSV words | 190,722 |
 | Each gold-TSV row through the lect of its file | 10,093 |
-| The test strings through 7 lects | 10,360 |
+| The test strings through 7 lects | 10,549 |
 | Mixed-language text, 4 lects, contact modes auto, es, fr and en | 1,152 |
 | `respell_word` and `force_accent` with the default phonemizer | 92 |
 | Lect codes, contact codes and the contact loop with a fixed transcriber | 139 |
-| A numeral next to a homograph, through the 41 lects and contact mode auto | 688 |
+| A numeral next to a homograph, through the 42 lects and contact mode auto | 704 |
 | `engine(lect).sentence_lattice()` and `engine(lect).features()` through 7 lects | 434 |
-| The normalizer, relayout, the stamp path, the lexicon files, the cache directory and the constants | 5,126 |
+| The normalizer, relayout, the stamp path, the lexicon files, the cache directory and the constants | 5,207 |
 | `_is_stale` on 336 stamps given as bytes, most of them not UTF-8 | 336 |
 | Unicode probes and a seeded fuzz set | 1,614 |
 
@@ -165,7 +169,7 @@ Every engine record matches at the submodule pin, so `tests/parity/expected_dive
 
 A cache TSV that was not written by the engine, with a current stamp, reads as Python reads it: a key keeps its case, and a line that does not have two fields does not count. `tests/cli_process.sh` checks such a TSV against the output of the Python tugaphone.
 
-orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads. The test `threads_tokenizer_codeswitch` builds tokenizer sentences in four threads and makes contact transcriptions in four others. CI runs the `threads_` tests under ThreadSanitizer. The test `threads_package` makes the first calls of ten package entry points in ten threads: the `TugaPhonemizer` methods, the plugin classes and the command line. With the lock made thread-local, ThreadSanitizer reports 35 races in it.
+orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache, the lexicon registration and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too, and so does the registry while it resolves a code through orthography2ipa. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads. The test `threads_tokenizer_codeswitch` builds tokenizer sentences in four threads and makes contact transcriptions in four others. CI runs the `threads_` tests under ThreadSanitizer. The test `threads_package` makes the first calls of ten package entry points in ten threads: the `TugaPhonemizer` methods, the plugin classes and the command line. With the lock made thread-local, ThreadSanitizer reports 35 races in it. The test `threads_registry` starts four contact transcriptions and four first `resolve_lect` calls together. Without the lock in the registry, ThreadSanitizer reports a race on the resolution catalog of orthography2ipa.cpp.
 
 ## The package API, the plugin and the command line
 
@@ -175,11 +179,11 @@ The goldens of these parts are these:
 
 | Corpus | Records |
 | --- | --- |
-| `phonemize_sentence` of each of the 41 lects over the 4,541 unique gold-TSV words, five contact modes in each record | 186,181 |
-| `phonemize_sentence` of each gold-TSV row and of the test strings through 7 lects | 20,453 |
-| The acceptance sentence in each lect, `is_supported`, `regional_dialect`, `force_accent`, `respell` and the constants | 552 |
-| The plugin: `syllabify`, `transcribe`, `transcribe_word` with and without a context, `force_accent` and the constants | 9,322 |
-| The command line: help at 15 `COLUMNS` values, 42 error cases at 2 widths, 168 runs, 8 runs with arguments that are not UTF-8, and 17 runs that fail outside argparse or change the environment | 442 |
+| `phonemize_sentence` of each of the 42 lects over the 4,541 unique gold-TSV words, five contact modes in each record | 190,722 |
+| `phonemize_sentence` of each gold-TSV row and of the test strings through 7 lects | 20,642 |
+| The acceptance sentence in each lect, `is_supported`, `regional_dialect`, `force_accent`, `respell` and the constants | 555 |
+| The plugin: `syllabify`, `transcribe`, `transcribe_word` with and without a context, `force_accent` and the constants | 9,346 |
+| The command line: help at 15 `COLUMNS` values, 42 error cases at 2 widths, 169 runs, 8 runs with arguments that are not UTF-8, and 17 runs that fail outside argparse or change the environment | 443 |
 | The error lines of overlay JSON, UTF-8 decoding and regular expressions, in the process | 7,036 |
 
 The command-line records run `python -I -m tugaphone` and the C++ executable on the same arguments, and compare standard output, standard error and the exit status. When Python ends with a traceback, for example for an overlay file that does not exist, the record holds the last line of the traceback: the exception class and its message. The C++ executable prints that line alone and exits with status 1. The path of this repository reads as `<root>` in that line. This holds for the exceptions of the libraries too: an unclosed `<phoneme>` tag gives `orthography2ipa.markup.MarkupError`, and a lexicon cache that cannot be made gives the `OSError` subclass of its errno, with the path that failed.
@@ -215,7 +219,6 @@ The port keeps these defects of the reference release, because it is held at byt
 - A `word` transform puts `\b` on each side of the pattern. A pattern that starts or ends with punctuation thus never matches between spaces.
 - `AccentOverlay.from_dict` writes any name with `str()`: a null name becomes "None".
 - The tokenizer gives a grapheme and a character an `idx_in_sentence` of `-1 + idx_in_word`. The value does not add the offset of the word in the sentence.
-- `_is_stale` decodes the stamp file as strict UTF-8 and catches only OSError. A stamp that is not UTF-8 raises UnicodeDecodeError, with the message that Python gives, from each `phonemize` call of the lect until the file is deleted. TigreGotico/tugaphone#174 fixes it in Python.
 - `is_grapheme_silent` compares the prefix with `"m"` and tests `after[0] in "cç"` for the archaic silent p. A direct call with the prefix `"m"` returns true. `CharToken.is_silent` gives the whole word prefix, so the rule never fires for a character of a word: `assumpção` keeps its p. The `mpt` words never match, because t is not in `"cç"`.
 - `scripts/benchmark.py --limit 0` formats a missing PER with `:.4f` and raises TypeError.
 - A negative `--limit` drops the last words of each fixture, as a Python slice does.
@@ -238,6 +241,8 @@ The status names the phase of the port that adds the name. Each name in the tabl
 <!-- /inventory:__init__ -->
 
 ### tugaphone.registry
+
+`resolve_lect` accepts a code that is not a canonical dialect only when `orthography2ipa::resolves_exactly` is true for it and `orthography2ipa::resolve` names a canonical dialect. A code that orthography2ipa finds only by its nearest language falls back by its subtags.
 
 <!-- inventory:registry -->
 | Python name | Kind | C++ name | Status |
@@ -408,15 +413,15 @@ The goldens use 13 dialects: the five national classes, the three city classes, 
 
 | Corpus | Records |
 | --- | --- |
-| Module functions and constants | 1,806 |
-| Test strings, token properties, national classes | 7,400 |
-| Test strings, IPA, the other eight dialects | 11,840 |
+| Module functions and constants | 1,833 |
+| Test strings, token properties, national classes | 7,535 |
+| Test strings, IPA, the other eight dialects | 12,056 |
 | The 4,541 unique words of the 10,093 gold-TSV rows, IPA, 13 dialects | 59,033 |
 | Every 20th gold-TSV word, token properties, national classes | 1,140 |
 | Unicode probes | 228 |
 | Seeded fuzz | 1,500 |
 | Tokens built directly, parent links, diaeresis vowels and rare graphemes | 308 |
-| Total | 83,255 |
+| Total | 83,633 |
 
 The rare graphemes are the tetragraphs of "Uruguai" and "quais", the triphthong of "saguão", the final o after a silent h in "Soho", and the atonic "pra". Only caller syllables, such as `["assu", "mpção"]`, put an archaic `mpç` or `mpt` grapheme in a word, so the goldens build these words with their syllables.
 
@@ -641,7 +646,7 @@ orthography2ipa.cpp keeps its spec cache in a global map with no lock. The token
 
 ### tugaphone.plugin
 
-The OVOS plugin registration is not applicable. A Python package registers a plugin with an entry point, and C++ has no entry points. A C++ program that wants `SilabificadorSyllabifier` as the syllabifier of orthography2ipa.cpp calls `orthography2ipa::register_syllabifier_plugin`. orthography2ipa.cpp keeps its plugins in a global map with no lock, and the lock that tugaphone holds around a transcription is not in the installed headers. So the program registers the plugin before its first transcription, while it has one thread. tugaphone 1.4.16a1 itself declares no entry point: the `orthography2ipa.syllabify` group gets its Portuguese syllabifier from orthography2ipa.
+The OVOS plugin registration is not applicable. A Python package registers a plugin with an entry point, and C++ has no entry points. A C++ program that wants `SilabificadorSyllabifier` as the syllabifier of orthography2ipa.cpp calls `orthography2ipa::register_syllabifier_plugin`. orthography2ipa.cpp keeps its plugins in a global map with no lock, and the lock that tugaphone holds around a transcription is not in the installed headers. So the program registers the plugin before its first transcription, while it has one thread. tugaphone 1.4.19a2 itself declares no entry point: the `orthography2ipa.syllabify` group gets its Portuguese syllabifier from orthography2ipa.
 
 <!-- inventory:plugin -->
 | Python name | Kind | C++ name | Status |

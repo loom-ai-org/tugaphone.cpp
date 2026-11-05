@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <map>
+#include <mutex>
 
 #include <orthography2ipa/orthography2ipa.hpp>
 
 #include "detail.hpp"
+#include "o2i_registry.hpp"
 
 namespace tugaphone::registry {
 
@@ -17,9 +19,19 @@ namespace {
 
 const std::vector<std::string>& canonical() {
     static const std::vector<std::string> codes = [] {
+        // The Galician-Portuguese key goes through resolve, because
+        // orthography2ipa keeps a renamed spec's old key as an exact alias.
+        std::string galician_portuguese;
+        std::vector<std::string> available;
+        {
+            const std::lock_guard<std::mutex> lock(detail::o2i_registry_mutex());
+            galician_portuguese = orthography2ipa::resolve("roa-x-galaicopt");
+            available = orthography2ipa::available_codes();
+        }
         std::vector<std::string> out;
-        for (const std::string& c : orthography2ipa::available_codes()) {
-            for (std::string_view prefix : {"pt-", "pt_", "ext-PT", "roa-x-galaicopt"}) {
+        for (const std::string& c : available) {
+            for (std::string_view prefix : {std::string_view("pt-"), std::string_view("pt_"),
+                                            std::string_view("ext-PT"), std::string_view(galician_portuguese)}) {
                 if (c.compare(0, prefix.size(), prefix) == 0) {
                     out.push_back(c);
                     break;
@@ -83,13 +95,35 @@ std::string normalize_dialect_code(std::string_view lang) {
     return to_utf8(detail::join(normalized, U"-"));
 }
 
+namespace {
+
+// registry.py _registered: the canonical dialect that code names exactly. A
+// code orthography2ipa renamed reaches its spec through the exact alias kept
+// for the old key; a nearest-language match does not count.
+std::optional<std::string> registered(const std::string& code) {
+    // canonical() takes the mutex the first time, so it runs before the lock.
+    const std::vector<std::string>& lects = canonical();
+    const std::string folded = to_utf8(detail::lower(from_utf8(code)));
+    for (const std::string& lect : lects) {
+        if (to_utf8(detail::lower(from_utf8(lect))) == folded) return lect;
+    }
+    std::string lect;
+    {
+        const std::lock_guard<std::mutex> lock(detail::o2i_registry_mutex());
+        if (!orthography2ipa::resolves_exactly(code)) return std::nullopt;
+        lect = orthography2ipa::resolve(code);
+    }
+    if (std::binary_search(lects.begin(), lects.end(), lect)) return lect;
+    return std::nullopt;
+}
+
+}  // namespace
+
 std::string resolve_lect(std::string_view lang) {
     std::string key = to_utf8(detail::lower(from_utf8(normalize_dialect_code(lang))));
     while (!key.empty()) {
-        if (auto it = kAliases.find(key); it != kAliases.end()) return it->second;
-        for (const std::string& code : canonical()) {
-            if (to_utf8(detail::lower(from_utf8(code))) == key) return code;
-        }
+        const auto alias = kAliases.find(key);
+        if (auto lect = registered(alias == kAliases.end() ? key : alias->second)) return *lect;
         const size_t dash = key.rfind('-');
         if (dash == std::string::npos) break;
         key.resize(dash);
