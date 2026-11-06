@@ -1,8 +1,7 @@
 """Goldens of the tugaphone package: TugaPhonemizer and the top-level re-exports.
 
 A phonemize_sentence record holds one text and one lect with the output of
-each contact mode, in the order of MODES. The lattice engine needs
-TUGAPHONE_LEXICON_DIR pointing at a scratch directory, as for lattice_core.
+each contact mode, in the order of MODES.
 """
 import json
 import warnings

@@ -60,24 +60,6 @@ std::pair<size_t, const char*> utf8_sequence(const std::string& s, size_t i) {
     return {i + need, nullptr};
 }
 
-// pathlib's is_dir(): false for the errors it ignores.
-bool is_dir(const std::string& path) {
-    struct stat st {};
-    if (::stat(path.c_str(), &st) == 0) return S_ISDIR(st.st_mode);
-    const int code = errno;
-    if (code == ENOENT || code == ENOTDIR || code == EBADF || code == ELOOP) return false;
-    raise_os_error(code, path);
-}
-
-// PurePosixPath(path).parent for a path that pure_path() gives.
-std::string pure_parent(const std::string& path) {
-    const size_t slash = path.rfind('/');
-    if (slash == std::string::npos) return ".";
-    const std::string head = path.substr(0, slash);
-    if (head.empty() || head == "/") return path.substr(0, slash + 1);
-    return head;
-}
-
 }  // namespace
 
 std::string os_error_class(int code) {
@@ -108,10 +90,6 @@ void raise_os_error(int code) { throw Error(os_error_class(code), os_error_messa
 
 void raise_os_error(int code, const std::string& path) {
     throw Error(os_error_class(code), os_error_message(code) + ": " + quoted(path));
-}
-
-void raise_os_error(int code, const std::string& path, const std::string& path2) {
-    throw Error(os_error_class(code), os_error_message(code) + ": " + quoted(path) + " -> " + quoted(path2));
 }
 
 void check_utf8(const std::string& bytes) {
@@ -184,57 +162,10 @@ void write_text(const std::string& path, const std::string& text) {
     if (::close(fd) != 0) raise_os_error(errno);
 }
 
-void replace(const std::string& src, const std::string& dst) {
-    if (::rename(src.c_str(), dst.c_str()) != 0) raise_os_error(errno, src, dst);
-}
-
 std::string path_join(const std::string& a, const std::string& b) {
     if (!b.empty() && b.front() == '/') return b;
     if (a.empty() || a.back() == '/') return a + b;
     return a + "/" + b;
-}
-
-std::string pure_path(const std::string& path) {
-    std::string root;
-    if (path.rfind("//", 0) == 0 && path.rfind("///", 0) != 0) {
-        root = "//";
-    } else if (!path.empty() && path.front() == '/') {
-        root = "/";
-    }
-    std::string out;
-    size_t start = 0;
-    while (start <= path.size()) {
-        size_t end = path.find('/', start);
-        if (end == std::string::npos) end = path.size();
-        const std::string part = path.substr(start, end - start);
-        if (!part.empty() && part != ".") out += (out.empty() ? "" : "/") + part;
-        start = end + 1;
-    }
-    if (root.empty() && out.empty()) return ".";
-    return root + out;
-}
-
-bool path_exists(const std::string& path) {
-    struct stat st {};
-    if (::stat(path.c_str(), &st) == 0) return true;
-    const int code = errno;
-    if (code == ENOENT || code == ENOTDIR || code == EBADF || code == ELOOP) return false;
-    raise_os_error(code, path);
-}
-
-void mkdir_parents(const std::string& path) {
-    if (::mkdir(path.c_str(), 0777) == 0) return;
-    int code = errno;
-    if (code == ENOENT) {
-        const std::string parent = pure_parent(path);
-        if (parent == path) raise_os_error(code, path);
-        mkdir_parents(parent);
-        // self.mkdir(parents=False, exist_ok=True)
-        if (::mkdir(path.c_str(), 0777) == 0) return;
-        code = errno;
-        if (code == ENOENT) raise_os_error(code, path);
-    }
-    if (!is_dir(path)) raise_os_error(code, path);
 }
 
 void makedirs(const std::string& path) {

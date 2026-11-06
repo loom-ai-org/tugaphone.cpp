@@ -23,7 +23,8 @@ public:
     static constexpr std::string_view ORDINAL_MALE = "º";
     static constexpr std::string_view ORDINAL_FEMALE = "ª";
     static constexpr std::array<std::string_view, 2> ORDINAL_TOKENS = {ORDINAL_MALE, ORDINAL_FEMALE};
-    static constexpr std::string_view TRAILING_PUNCTUATION = ".,;:!?)\"”…";
+    static constexpr std::string_view LEADING_PUNCTUATION = "(“\"'¿¡«";
+    static constexpr std::string_view TRAILING_PUNCTUATION = ".,;:!?)\"”»…";
 
     static const std::set<std::string>& LABEL_HEADS();
     static const std::set<std::string>& PLURAL_FUNCTION_WORDS();

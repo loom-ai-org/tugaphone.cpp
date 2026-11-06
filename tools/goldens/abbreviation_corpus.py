@@ -59,6 +59,14 @@ PROBES = [
     "no Cap. V vemos", "o Cap. X termina", "Cap. I, secção 2", "Leia o cap. I antes", "segundo o art. V do código",
     "(Cap. I)", "veja o cap. I hoje", "Leia o cap. I antes de sair", "o Cap. I do Harry Potter",
     "no Cap. V o software falha", "o meu download do Cap. I",
+    # the window of two words: a sentence end before the marker, and
+    # punctuation on the first word after the numeral
+    "Lange, Dierk! Cap. X do livro", "Lange, Dierk? Cap. X do livro", "Lange, Dierk.» Cap. I do livro",
+    "Lange, Dierk.” Cap. I do livro", "Lange, Dierk.) Cap. V do livro", 'Lange, Dierk." Cap. V do livro',
+    "Lange, Dierk?! Cap. V do livro", "Lange, Dierk.)] Cap. X do livro", "Lange, Dierk.: Cap. X do livro",
+    "Lange, Dierk, Cap. I do livro", "Gibbon 1985 cap. I, p. 36", "Cap. I do, software novo", "Cap. V o, software",
+    "Cap. V o software novo", "Cap. X (software) novo", "Cap. I a software", "Cap. I software", "o Cap. I.",
+    "software Cap. I.", "software! Cap. I software", ") Cap. I do", "] Cap. V o",
 ]
 
 # Names and nouns before a Roman numeral: rulers, popes, female names, and

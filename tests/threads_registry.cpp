@@ -30,7 +30,7 @@ int main() {
         {[] { return tugaphone::codeswitch::transcribe_contact("fiesta", "es"); }, ""},
         {[] { return tugaphone::codeswitch::transcribe_contact("croissant", "fr"); }, ""},
         {[] { return tugaphone::codeswitch::transcribe_contact("weekend", "en"); }, ""},
-        {[] { return tugaphone::registry::resolve_lect("roa-x-galaicopt"); }, "roa-x-galaico-pt"},
+        {[] { return tugaphone::registry::resolve_lect("roa-x-galaicopt"); }, "pt-PT"},
         {[] { return tugaphone::registry::resolve_lect("por-BR"); }, "pt-BR"},
         {[] { return tugaphone::registry::resolve_lect("glg"); }, "pt-PT"},
         {[] { return tugaphone::registry::resolve_lect("pt-BR-x-unknown"); }, "pt-BR"},

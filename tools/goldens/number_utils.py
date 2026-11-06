@@ -4,14 +4,17 @@ of ovos-number-parser that it calls.
 An int is written as {"int": "<digits>"} and a float as {"float": "<repr>"},
 so that no value loses digits in JSON.
 """
+import csv
+import gzip
 import itertools
 import math
+import pathlib
 import random
 import warnings
 
+import tugalex
 from ovos_number_parser import pronounce_number
 from ovos_number_parser.util import DigitPronunciation, GrammaticalGender, Scale
-from tugalex import TugaLexicon
 from tugaphone import text_normalization as tn
 from tugaphone.number_utils import NumberParser as NP, normalize_numbers
 
@@ -133,7 +136,7 @@ def context_records(tokens):
 def table_records():
     out = [["sets", {k: sorted(getattr(NP, k)) for k in ("LABEL_HEADS", "PLURAL_FUNCTION_WORDS", "FEMININE_DETERMINERS",
                                                          "MASCULINE_DETERMINERS", "FUNCTION_WORDS", "RANGE_LINKS")},
-            NP.ORDINAL_MALE, NP.ORDINAL_FEMALE, NP.ORDINAL_TOKENS, NP.TRAILING_PUNCTUATION,
+            NP.ORDINAL_MALE, NP.ORDINAL_FEMALE, NP.ORDINAL_TOKENS, NP.LEADING_PUNCTUATION, NP.TRAILING_PUNCTUATION,
             [[k, list(v)] for k, v in NP.UNIT_NAMES.items()]]]
     for symbol in list(NP.UNIT_NAMES) + ["", "xyz", "KG"]:
         for plural, br in itertools.product((False, True), (False, True)):
@@ -162,9 +165,18 @@ NONFINITE = ["o Inf. Henrique", "inf", "-inf", "+inf", "INF.", "Inf,", "nan", "N
              "-Infinity", "iNfInItY", "nan e 2", "2 inf", "1 Inf. 2", "(inf)", "inf.", "infs", "nans", "infinite"]
 
 
+def lisbon_headwords():
+    """The headwords of the Lisbon region of the tugalex dictionary, sorted."""
+    path = pathlib.Path(tugalex.__file__).parent / "data" / "regional_dict.csv.gz"
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
+        rows = csv.reader(line for line in fh if not line.startswith("#"))
+        next(rows)
+        return sorted({row[0].strip().lower() for row in rows if len(row) >= 4 and row[3].strip().lower() == "lbx"})
+
+
 def noun_texts():
     """Counted nouns of the lexicon that end in -agem or hold a hyphen, after a number."""
-    nouns = sorted(TugaLexicon().get_ipa_map("NOUN", "lbx"))
+    nouns = lisbon_headwords()
     agem = [w for w in nouns if w.endswith("agem")]
     hyphen = [w for w in nouns if "-" in w]
     out = []
@@ -173,6 +185,21 @@ def noun_texts():
     for w in hyphen:
         out += [f"1 {w}", f"2 {w}s", f"1 {w}…"]
     return out
+
+
+# Punctuation glued to a number, and the contexts that read the number: a noun,
+# a unit, a range, a fraction and a product.
+GLUE_LEADS = ["", "(", "«", "“", "\"", "'", "¿", "¡", "((", "(«", "[", "‘", "—"]
+GLUE_NUMBERS = ["1", "2", "21", "0", "1,5", "1.000", "1.5", "1º", "2ª", "-3", "²", "inf", "nan", "x"]
+GLUE_TRAILS = ["", ")", "»", "”", "\"", ".", ",", "),", "»,", ").", "…", "!", "'", "]"]
+GLUE_TEMPLATES = ["{w}", "a {w} b", "{w} casas", "{w} kg", "de 1 a {w} casas", "de {w} a 2 casas", "entre 1 e {w} casas",
+                  "2 vírgula {w}", "2 vírgula {w} kg", "{w} vírgula 5", "{w} vírgula 5 kg", "{w} vezes 3", "o {w} lugar",
+                  "as {w} casas", "de 2 a {w} varia muito"]
+
+
+def glued_texts():
+    words = [f"{lead}{number}{trail}" for lead in GLUE_LEADS for number in GLUE_NUMBERS for trail in GLUE_TRAILS]
+    return common.unique(template.format(w=w) for template in GLUE_TEMPLATES for w in words)
 
 
 def corpora(repo):
@@ -199,6 +226,7 @@ def corpora(repo):
         ("units", sentence_records(unit_texts, ["pt-PT", "pt-BR"])),
         ("nouns", sentence_records(common.unique(noun_texts()), ["pt-PT", "pt-BR"])),
         ("nonfinite", sentence_records(NONFINITE, ["pt-PT", "pt-BR"])),
+        ("glued", sentence_records(glued_texts(), ["pt-PT", "pt-BR"])),
         ("unicode", sentence_records(probes, ["pt-PT", "pt-BR"])),
         ("fuzz", sentence_records(fuzz, langs, scales=(None, "short"))),
     ]

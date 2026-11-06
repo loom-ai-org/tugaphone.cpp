@@ -1,5 +1,7 @@
 #include "tugaphone/tugaphone.hpp"
 
+#include "detail.hpp"
+
 namespace tugaphone {
 
 std::string TugaPhonemizer::phonemize_sentence(std::string_view sentence, std::string_view lang,
@@ -19,7 +21,7 @@ std::string TugaPhonemizer::force_accent(std::string_view text, std::string_view
 }
 
 bool TugaPhonemizer::is_supported(std::string_view lang) {
-    registry::resolve_lect(lang);
+    detail::resolve_lect_from(lang, "is_supported");
     return true;
 }
 

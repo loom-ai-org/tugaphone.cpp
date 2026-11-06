@@ -40,23 +40,8 @@ std::string read_text(const std::string& path);
 // text mode on POSIX writes "\n" unchanged.
 void write_text(const std::string& path, const std::string& text);
 
-// os.replace(src, dst).
-void replace(const std::string& src, const std::string& dst);
-
 // os.path.join(a, b): b alone when it is absolute.
 std::string path_join(const std::string& a, const std::string& b);
-
-// str(pathlib.PurePosixPath(path)): no empty or "." components, no trailing
-// slash, "." for an empty path.
-std::string pure_path(const std::string& path);
-
-// pathlib.Path(path).exists(): false for the errors pathlib ignores (ENOENT,
-// ENOTDIR, EBADF, ELOOP), the OSError of any other.
-bool path_exists(const std::string& path);
-
-// pathlib.Path(path).mkdir(parents=True, exist_ok=True) for a path that
-// pure_path() gives. The error names the component that failed.
-void mkdir_parents(const std::string& path);
 
 // os.makedirs(path, exist_ok=True).
 void makedirs(const std::string& path);
