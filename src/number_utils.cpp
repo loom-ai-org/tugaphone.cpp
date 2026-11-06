@@ -1,5 +1,7 @@
 #include "tugaphone/number_utils.hpp"
 
+#include <algorithm>
+
 #include <tugalex/tugalex.hpp>
 
 #include "detail.hpp"
@@ -17,7 +19,8 @@ namespace {
 const U32 kOrdinalMarks = U"ºª";
 // string.whitespace
 const U32 kAsciiWhitespace = U" \t\n\r\x0b\x0c";
-const U32 kTrailing = U".,;:!?)\"”…";
+const U32 kLeading = U"(“\"'¿¡«";
+const U32 kTrailing = U".,;:!?)\"”»…";
 
 bool in(const std::set<std::string>& set, U32View word) { return set.count(to_utf8(word)) != 0; }
 
@@ -293,10 +296,11 @@ std::string normalize_numbers(std::string_view text, std::string_view lang, bool
         if (i < 0 || i >= n) return std::nullopt;
         return words[static_cast<size_t>(i)];
     };
+    // float() also reads "nan", "inf" and "infinity", which are words in text.
     auto is_number = [](const std::optional<U32>& token) {
         if (!token) return false;
-        const U32 core = split_trailing(*token).first;
-        return is_int_u(core) || is_float_u(core);
+        const U32 core = split_trailing(detail::lstrip(*token, kLeading)).first;
+        return std::any_of(core.begin(), core.end(), detail::is_digit) && (is_int_u(core) || is_float_u(core));
     };
     auto unit_symbol = [](const std::optional<U32>& token) -> std::optional<U32> {
         if (!token) return std::nullopt;
@@ -315,7 +319,9 @@ std::string normalize_numbers(std::string_view text, std::string_view lang, bool
             skip_unit = false;
             continue;
         }
-        auto [core, trail] = split_trailing(word);
+        const U32 body = detail::lstrip(word, kLeading);
+        const U32 lead = word.substr(0, word.size() - body.size());
+        auto [core, trail] = split_trailing(body);
         if (!is_number(core)) {
             normalized.push_back(word);
             continue;
@@ -336,9 +342,11 @@ std::string normalize_numbers(std::string_view text, std::string_view lang, bool
         } else if (((next_word && in(NumberParser::RANGE_LINKS(), *next_word)) ||
                     (next_word && *next_word == U"e" && prev_word && *prev_word == U"entre")) &&
                    is_number(word_at(idx + 2)) && !is_ordinal_u(core, next_word)) {
+            // A bracket or quote around the second number alone keeps it with its
+            // noun. One that closes a longer stretch cuts them apart.
             const auto [second, second_trail] = split_trailing(*word_at(idx + 2));
-            const std::optional<U32> after =
-                (!second_trail.empty() || idx + 3 >= n) ? std::nullopt : word_at(idx + 3);
+            const U32 cut = kLeading.find(second[0]) != U32::npos ? detail::rstrip(second_trail, U")\"”»") : second_trail;
+            const std::optional<U32> after = (!cut.empty() || idx + 3 >= n) ? std::nullopt : word_at(idx + 3);
             gender = unit_symbol(after) ? std::string("masculine") : number_gender(second, next_word, after);
         }
         try {
@@ -355,8 +363,9 @@ std::string normalize_numbers(std::string_view text, std::string_view lang, bool
             if (unit) {
                 std::optional<double> value;
                 if (is_fraction) {
+                    const U32 integer = split_trailing(detail::lstrip(*word_at(idx - 2), kLeading)).first;
                     const U32 fraction = core.empty() ? U32(U"0") : core;
-                    value = py_float(to_utf8(*word_at(idx - 2) + U"." + fraction));
+                    value = py_float(to_utf8(integer + U"." + fraction));
                     if (!value) throw ValueError("could not convert string to float");
                 } else {
                     value = to_float_u(core);
@@ -371,7 +380,7 @@ std::string normalize_numbers(std::string_view text, std::string_view lang, bool
                 trail = split_trailing(*next_word).second;
                 skip_unit = true;
             }
-            normalized.push_back(detail::join(spelled, U" ") + trail);
+            normalized.push_back(lead + detail::join(spelled, U" ") + trail);
         } catch (const Error&) {
             if (strict) throw;
             normalized.push_back(word);

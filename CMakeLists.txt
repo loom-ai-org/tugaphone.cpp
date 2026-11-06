@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(tugaphone VERSION 1.4.20 LANGUAGES CXX)
+project(tugaphone VERSION 1.6.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -244,8 +244,7 @@ if(TUGAPHONE_BUILD_TESTS)
         list(APPEND _parity_tests parity_package_${_k})
     endforeach()
     foreach(_test IN LISTS _parity_tests)
-        set_tests_properties(${_test} PROPERTIES ENVIRONMENT
-            "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-${_test}")
+        set_tests_properties(${_test} PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
     endforeach()
     # The command-line records run the executable in the source tree, and the
     # benchmark records read the gold fixtures there.
@@ -260,14 +259,12 @@ if(TUGAPHONE_BUILD_TESTS)
     # sanitizer build.
     add_test(NAME parity_small_stack COMMAND tugaphone_parity ${CMAKE_CURRENT_SOURCE_DIR}/tests/goldens
              --stack-kb 1024 accent)
-    set_tests_properties(parity_small_stack PROPERTIES ENVIRONMENT
-        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-small-stack")
+    set_tests_properties(parity_small_stack PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     add_executable(tugaphone_threads_lattice_core tests/threads_lattice_core.cpp)
     target_link_libraries(tugaphone_threads_lattice_core PRIVATE tugaphone Threads::Threads)
     add_test(NAME threads_lattice_core COMMAND tugaphone_threads_lattice_core)
-    set_tests_properties(threads_lattice_core PROPERTIES ENVIRONMENT
-        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-threads")
+    set_tests_properties(threads_lattice_core PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     add_executable(tugaphone_threads_tokenizer tests/threads_tokenizer.cpp)
     target_link_libraries(tugaphone_threads_tokenizer PRIVATE tugaphone Threads::Threads)
@@ -278,14 +275,12 @@ if(TUGAPHONE_BUILD_TESTS)
     target_include_directories(tugaphone_threads_package PRIVATE src)
     target_link_libraries(tugaphone_threads_package PRIVATE tugaphone Threads::Threads)
     add_test(NAME threads_package COMMAND tugaphone_threads_package)
-    set_tests_properties(threads_package PROPERTIES ENVIRONMENT
-        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-threads-package")
+    set_tests_properties(threads_package PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     add_test(NAME cli_process COMMAND sh ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_process.sh
              $<TARGET_FILE:tugaphone_cli> $<TARGET_FILE:tugaphone_benchmark> ${CMAKE_CURRENT_SOURCE_DIR}
              ${CMAKE_CURRENT_BINARY_DIR}/cli-process)
-    set_tests_properties(cli_process PROPERTIES ENVIRONMENT
-        "${_tugaphone_test_env};TUGAPHONE_LEXICON_DIR=${CMAKE_CURRENT_BINARY_DIR}/lexicon-cache-cli-process")
+    set_tests_properties(cli_process PROPERTIES ENVIRONMENT "${_tugaphone_test_env}")
 
     add_executable(tugaphone_threads_tokenizer_codeswitch tests/threads_tokenizer_codeswitch.cpp)
     target_link_libraries(tugaphone_threads_tokenizer_codeswitch PRIVATE tugaphone Threads::Threads)

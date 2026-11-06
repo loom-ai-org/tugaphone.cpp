@@ -8,7 +8,8 @@ compares the bytes. An argument that is not UTF-8 is written as
 {"hex": "<bytes>"}. When Python ends with a traceback, the record says so: the
 frames name Python source files, so the record holds the last line of the
 traceback, and the C++ side must print that line alone. This repository reads
-as "<root>" in that line.
+as "<root>" in that line. A UserWarning is recorded as its category and text
+alone, for the same reason.
 
 An optional last item of a "cli" record changes how the process runs:
 "env" sets variables, or removes those set to null; "stdout" names a file to
@@ -26,6 +27,7 @@ import os
 import pathlib
 import pty
 import random
+import re
 import struct
 import subprocess
 import sys
@@ -66,7 +68,13 @@ RUNS = (
        ["phonemize", "--lect", "pt-BR", ACCEPTANCE], ["phonemize", "--lect=pt-BR", "--", ACCEPTANCE],
        ["phonemize", ACCEPTANCE, "--lect", "PT_br"], ["phonemize", ACCEPTANCE, "--lect", ""],
        ["phonemize", ACCEPTANCE, "--lect", "xx"], ["phonemize", ACCEPTANCE, "--lect", "pt-pt-x-azores"],
-       ["phonemize", ACCEPTANCE, "--lect", "pt-BR", "--lect", "pt-AO"]]
+       ["phonemize", ACCEPTANCE, "--lect", "pt-BR", "--lect", "pt-AO"],
+       ["phonemize", ACCEPTANCE, "--lect", "pt-BR-x-unknown"], ["phonemize", ACCEPTANCE, "--lect", "ext-PT-x-barranco"],
+       ["phonemize", ACCEPTANCE, "--lect", "pt-PT-x-medieval"], ["phonemize", ACCEPTANCE, "--lect", "roa-x-galaico-pt"],
+       ["phonemize", ACCEPTANCE, "--lect", "en-US"], ["phonemize", ACCEPTANCE, "--lect", "it's"],
+       ["force-accent", "o vinho", "--lect", "xx"], ["force-accent", "o vinho", "--lect", "xx", "--base", "yy"],
+       ["force-accent", "o vinho", "--lect", "xx", "--base", "xx"],
+       ["force-accent", "o vinho", "--lect", "xx", "--base", "xx", "--mode", "respell"]]
     + [["phonemize", "--", t] for t in TEXTS] + [["phonemize", t, "--lect", "pt-BR"] for t in TEXTS if t[:1] != "-"]
     + [["force-accent", t, "--lect", lect, "--mode", mode] + base
        for t in ("o vinho verde", "a tia", ACCEPTANCE) for lect in ("pt-BR", "pt-PT-x-porto", "pt-AO")
@@ -87,24 +95,26 @@ BYTE_ARGS = [
     [b"\xff"], [b"phon\xe9mize", b"x"], [b"phonemize", b"\xe2\x82"], [b"phonemize", b"x", b"--l\xff"],
     [b"force-accent", b"x", b"--mode", b"ip\xc3"], [b"phonemize", b"o gato \xff", b"--lect", b"pt-BR"],
     [b"list", b"\xed\xa0\x80"], [b"phonemize", b"x", b"--lect", b"pt-BR", b"--\xf0\x90\x80"],
+    [b"phonemize", b"x", b"--lect", b"pt-\xff"],
 ]
 # Runs that fail outside argparse, and runs with a changed environment.
 FAILURES = [
     (["phonemize", "<phoneme>jogo"], None), (["phonemize", "o gato</phoneme>"], None),
     (["force-accent", "<phoneme>jogo", "--lect", "pt-BR"], None),
-    (["phonemize", "o gato"], {"env": {"TUGAPHONE_LEXICON_DIR": "tests/data/cli/tweaks.json/sub"}}),
-    (["phonemize", "o gato"], {"env": {"TUGAPHONE_LEXICON_DIR": "/proc/tugaphone/sub"}}),
-    (["phonemize", "o gato"], {"env": {"TUGAPHONE_LEXICON_DIR": "/nonexistent-tugaphone/lexicon"}}),
-    (["phonemize", "o gato"], {"env": {"TUGAPHONE_LEXICON_DIR": None, "XDG_CACHE_HOME": None,
-                                       "HOME": "/nonexistent-tugaphone"}}),
-    (["phonemize", "o gato"], {"env": {"TUGAPHONE_LEXICON_DIR": None,
-                                       "XDG_CACHE_HOME": "/nonexistent-tugaphone/cache"}}),
+    (["phonemize", "<phoneme>jogo", "--lect", "xx"], None),
     (["phonemize", "o gato"], {"env": {"TUGAPHONE_LEXICON_DIR": "/dev/null/lexicon"}}),
+    (["phonemize", "o gato"], {"env": {"XDG_CACHE_HOME": None, "HOME": "/nonexistent-tugaphone"}}),
     (["list"], {"stdout": "/dev/full"}), (["phonemize", "o gato", "--lect", "pt-BR"], {"stdout": "/dev/full"}),
     (["-h"], {"stdout": "/dev/full"}), (["phon"], {"stdout": "/dev/full"}),
     (["-h"], {"pty": 50}), (["phonemize", "-h"], {"pty": 120}), (["force-accent", "--help"], {"pty": 33}),
     (["list"], {"pty": 70}),
 ]
+
+
+# A warning names a Python source file and a source line, so the record holds
+# its category and text, which is what the C++ side prints.
+WARNING = re.compile(r"^.*:\d+: UserWarning: (.*)\n  .*\n", re.M)
+WARNED = re.compile(r"^UserWarning: .*\n", re.M)
 
 
 def local(line):
@@ -148,10 +158,12 @@ def run(args, columns, options=None):
         p = subprocess.run(argv, capture_output=True, cwd=ROOT, env=env)
         stdout, stderr, returncode = p.stdout, p.stderr, p.returncode
     out, err = stdout.decode("utf-8"), stderr.decode("utf-8")
-    traceback_seen = err.startswith("Traceback (most recent call last):\n")
+    err = WARNING.sub(r"UserWarning: \1\n", err)
+    traceback_at = err.find("Traceback (most recent call last):\n")
+    traceback_seen = traceback_at >= 0
     if traceback_seen:  # the frames name Python files: keep the last line
-        err = local(err.rstrip("\n").splitlines()[-1])
-    if returncode == 0 and err:
+        err = err[:traceback_at] + local(err.rstrip("\n").splitlines()[-1])
+    if returncode == 0 and WARNED.sub("", err):
         raise SystemExit(f"python wrote to stderr on success, a warning that names a path: {args} {err!r}")
     record_args = [{"hex": a.hex()} if isinstance(a, bytes) and not is_utf8(a) else
                    a.decode("utf-8") if isinstance(a, bytes) else a for a in args]

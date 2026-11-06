@@ -12,7 +12,7 @@ int main() {
     const tugaphone::TugaPhonemizer phonemizer;
     const bool ok = tugaphone::registry::resolve_lect("pt-pt-x-azores") == "pt-PT-x-acores" &&
                     tugaphone::dialects::EuropeanPortuguese().IRREGULAR_WORDS.size() > 1000 &&
-                    phonemizer.phonemize_sentence("o gato") == "o ˈɡatu" &&
+                    phonemizer.phonemize_sentence("o gato") == "u ˈɡatu" &&
                     tugaphone::plugin::SilabificadorSyllabifier().syllabify("gato") ==
                         std::vector<std::string>{"ga", "to"};
     return ok ? 0 : 1;

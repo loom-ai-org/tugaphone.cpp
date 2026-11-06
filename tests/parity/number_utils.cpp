@@ -92,7 +92,7 @@ std::string sets() {
                       ",\"FUNCTION_WORDS\":" + set(NP::FUNCTION_WORDS()) + ",\"RANGE_LINKS\":" + set(NP::RANGE_LINKS()) +
                       "}," + J(std::string(NP::ORDINAL_MALE)) + "," + J(std::string(NP::ORDINAL_FEMALE)) + "," +
                       list({J(std::string(NP::ORDINAL_TOKENS[0])), J(std::string(NP::ORDINAL_TOKENS[1]))}) + "," +
-                      J(std::string(NP::TRAILING_PUNCTUATION)) + ",";
+                      J(std::string(NP::LEADING_PUNCTUATION)) + "," + J(std::string(NP::TRAILING_PUNCTUATION)) + ",";
     std::vector<std::string> units;
     for (const auto& u : NP::UNIT_NAMES()) units.push_back(list({J(u.symbol), list({J(u.singular), J(u.plural)})}));
     return out + list(units) + "]";

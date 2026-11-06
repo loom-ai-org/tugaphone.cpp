@@ -661,14 +661,24 @@ using IsForeign = std::function<bool(const U32&)>;
 
 // _is_marker_number: whether words[j] is the number of the reference marker
 // before it. A single I, V or X is also the English pronoun or a letter, so it
-// counts only when neither the word before the marker nor the word after the
-// numeral is foreign; punctuation after the numeral ends its phrase.
+// counts only when neither the word before the marker nor the two words after
+// the numeral are foreign. A word before the marker that ends a sentence is
+// outside the window, and punctuation ends the window after the numeral.
 bool is_marker_number(const std::vector<U32>& words, size_t j, const IsForeign& is_foreign) {
     if (!is_number(words[j])) return false;
     const Edges edges = split_edges(words[j]);
     if (edges.core != U"I" && edges.core != U"V" && edges.core != U"X") return true;
-    if (j >= 2 && is_foreign(words[j - 2])) return false;
-    return !(edges.trail.empty() && j + 1 < words.size() && is_foreign(words[j + 1]));
+    if (j >= 2) {
+        const U32 before = detail::rstrip(words[j - 2], U"»”’\"')]");
+        const bool ends_sentence = !before.empty() && U32View(U".!?…").find(before.back()) != U32View::npos;
+        if (!ends_sentence && is_foreign(words[j - 2])) return false;
+    }
+    if (!edges.trail.empty()) return true;
+    for (size_t k = j + 1; k < std::min(j + 3, words.size()); ++k) {
+        if (is_foreign(words[k])) return false;
+        if (!split_edges(words[k]).trail.empty()) break;
+    }
+    return true;
 }
 
 bool is_portuguese_abbreviation(const std::vector<U32>& words, size_t i, const IsForeign& is_foreign) {
