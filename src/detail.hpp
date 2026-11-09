@@ -66,8 +66,8 @@ std::string data_path(const std::string& relative);
 // The bytes of a file; FileNotFoundError when it cannot be opened.
 std::string read_file(const std::string& path);
 
-// lattice_core._LEXICON_CACHE as the current environment gives it. The engine
-// reads it once; the parity test calls it under each environment.
-std::string default_lexicon_cache_dir();
+// registry.resolve_lect(lang) from the Python caller that `call_site` names. The
+// default warning filter prints a text once for each caller.
+std::string resolve_lect_from(std::string_view lang, std::string_view call_site);
 
 }  // namespace tugaphone::detail

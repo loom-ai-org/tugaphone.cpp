@@ -10,9 +10,7 @@ failed=0
 # as Python does for an uncaught exception. Python ships its data, so no
 # golden holds this case.
 for var in TUGALEX_DATA_DIR BIFONIA_DATA_DIR; do
-    lexicon=$(mktemp -d "$scratch/lexicon-XXXXXX")
-    env "$var=/nonexistent-tugaphone" TUGAPHONE_LEXICON_DIR="$lexicon" "$cli" phonemize "o gato" \
-        > "$scratch/out" 2> "$scratch/err"
+    env "$var=/nonexistent-tugaphone" "$cli" phonemize "tenho 2 casas" > "$scratch/out" 2> "$scratch/err"
     status=$?
     lines=$(wc -l < "$scratch/err")
     if [ "$status" != 1 ] || [ "$lines" != 1 ] || ! grep -Eq '^[A-Za-z.]*Error: ' "$scratch/err"; then
@@ -22,16 +20,40 @@ for var in TUGALEX_DATA_DIR BIFONIA_DATA_DIR; do
     fi
 done
 
-# A cache TSV made by hand, with the stamp that the engine wrote, reads as
-# Python reads it: a key keeps its case, and a line without two fields does
-# not count. The expected line is the output of the Python tugaphone of
-# PARITY.md with the same TSV.
-lexicon=$(mktemp -d "$scratch/lexicon-XXXXXX")
-TUGAPHONE_LEXICON_DIR="$lexicon" "$cli" phonemize --lect pt-PT "o gato" > /dev/null
-printf 'Gato\tˈmjaw\ncão\tˈbɐ̃w\tx\nsolo\npato\tˈkwak\r\nrato\tˈʃiʃ\n' > "$lexicon/pt-PT.tsv"
-out=$(TUGAPHONE_LEXICON_DIR="$lexicon" "$cli" phonemize --lect pt-PT "o Gato, o gato, o cão, o solo, o pato e o rato")
-if [ "$out" != "o ˈɡatu o ˈɡatu o ˈkɐ̃w̃ o ˈsɔlu o ˈkwak i o ˈʃiʃ" ]; then
-    echo "FAIL hand-made cache TSV: $out"
+# A lexicon TSV made by hand reads as Python reads it: a key keeps its case, and
+# a line without two fields does not count. The expected line is the output of
+# the Python tugaphone of PARITY.md with the same TSV.
+data=$(mktemp -d "$scratch/data-XXXXXX")
+cp -R "$root/data/." "$data"
+printf 'Gato\tˈmjaw\ncão\tˈbɐ̃w\tx\nsolo\npato\tˈkwak\r\nrato\tˈʃiʃ\n' > "$data/o2i-lexicons/pt-PT/infopedia.tsv"
+out=$(TUGAPHONE_DATA_DIR="$data" "$cli" phonemize --lect pt-PT "o Gato, o gato, o cão, o solo, o pato e o rato")
+if [ "$out" != "u ˈɡatu u ˈɡatu u ˈkɐ̃w̃ u ˈsɔlu u ˈkwak i u ˈʃiʃ" ]; then
+    echo "FAIL hand-made lexicon TSV: $out"
+    failed=1
+fi
+
+# A lect that takes a lexicon fails with LookupError when the data directory
+# holds no file or two files for it. Python raises LookupError there too, but
+# its text differs; PARITY.md lists the difference. A lect with no lexicon
+# still reads.
+mv "$data/o2i-lexicons/pt-PT/infopedia.tsv" "$data/infopedia.tsv"
+expected="LookupError: no installed package supplies a lexicon file for 'pt-PT'"
+for files in 0 2; do
+    if [ "$files" = 2 ]; then
+        cp "$data/infopedia.tsv" "$data/o2i-lexicons/pt-PT/a.tsv"
+        cp "$data/infopedia.tsv" "$data/o2i-lexicons/pt-PT/b.tsv"
+    fi
+    TUGAPHONE_DATA_DIR="$data" "$cli" phonemize --lect pt-PT "o gato" > "$scratch/out" 2> "$scratch/err"
+    status=$?
+    if [ "$status" != 1 ] || [ "$(cat "$scratch/err")" != "$expected" ]; then
+        echo "FAIL $files lexicon files: status $status, stderr:"
+        cat "$scratch/err"
+        failed=1
+    fi
+done
+out=$(TUGAPHONE_DATA_DIR="$data" "$cli" phonemize --lect pt-AO "o gato")
+if [ "$out" != "ʊ ˈɡatʊ" ]; then
+    echo "FAIL pt-AO without the pt-PT lexicon: $out"
     failed=1
 fi
 

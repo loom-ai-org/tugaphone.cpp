@@ -11,16 +11,17 @@
 #      copied outside the prefix.
 # Each prefix gets its own letter_expressions.json edited to list "capítulo
 # XII" as a letter expression, so the command line that reads it leaves the
-# numeral as a letter name. Every other copy of the data stays unedited: the
-# source tree, the working directory, the decoy of case 2, the configured
-# prefix of cases 2 and 3, and <prefix>/lib/share of case 3. A command line
-# that reads any of them prints the numeral, and the test fails. The expected
-# line is the output of the Python tugaphone of PARITY.md for the same
-# arguments and data.
+# numeral as a letter name, and its own pt-PT lexicon edited to read "basebol"
+# as "ˈzzz". Every other copy of the data stays unedited: the source tree, the
+# working directory, the decoy of case 2, the configured prefix of cases 2 and
+# 3, and <prefix>/lib/share of case 3. A command line that reads any of them
+# prints the numeral or the lexicon entry, and the test fails. The expected line
+# is the output of the Python tugaphone of PARITY.md for the same arguments and
+# data.
 if(PREFIX STREQUAL INSTALL_PREFIX)
     message(FATAL_ERROR "PREFIX must differ from CMAKE_INSTALL_PREFIX: ${PREFIX}")
 endif()
-file(REMOVE_RECURSE "${PREFIX}" "${PREFIX}-lexicon-cache" "${PREFIX}-layouts" "${PREFIX}-cwd")
+file(REMOVE_RECURSE "${PREFIX}" "${PREFIX}-layouts" "${PREFIX}-cwd")
 # Each case runs from a directory that holds an unedited copy of the data at
 # share/tugaphone, so a lookup relative to the working directory prints the
 # numeral.
@@ -34,26 +35,32 @@ function(run)
     endif()
 endfunction()
 
-set(expected "ˈtɛɲu ˈvĩt i ˈtɾez ˈɐnuʃ sɨˈɲoɾ ˈsiɫvɐ ˈli o kɐˈpitulu ʃiˈi\n")
+set(expected "ˈtɛɲu ˈvĩt i ˈtɾez ˈɐnuʃ sɨˈɲoɾ ˈsiɫvɐ ˈli u kɐˈpitulu ʃiˈi i ʒuˈɡej ˈzzz\n")
 
-# Lists "capítulo XII" as a letter expression in the data directory *dir*.
-# "Cap." expands to "Capítulo" before the numeral rule reads the word before
-# "XII".
-function(edit_expressions dir)
+# Lists "capítulo XII" as a letter expression in the data directory *dir*, and
+# replaces the reading of "basebol" in its pt-PT lexicon. "Cap." expands to
+# "Capítulo" before the numeral rule reads the word before "XII".
+function(edit_data dir)
     file(READ "${dir}/letter_expressions.json" expressions)
     string(REPLACE "\"expressions\": {" "\"expressions\": {\"capítulo XII\": \"\"," edited "${expressions}")
     if(edited STREQUAL expressions)
         message(FATAL_ERROR "${dir}/letter_expressions.json has no expressions object")
     endif()
     file(WRITE "${dir}/letter_expressions.json" "${edited}")
+    set(lexicon "${dir}/o2i-lexicons/pt-PT/infopedia.tsv")
+    file(READ "${lexicon}" entries)
+    string(REPLACE "basebol\tbejzɨˈbɔɫ\n" "basebol\tˈzzz\n" edited "${entries}")
+    if(edited STREQUAL entries)
+        message(FATAL_ERROR "${lexicon} has no entry for basebol")
+    endif()
+    file(WRITE "${lexicon}" "${edited}")
 endfunction()
 # The command line to run, then the variables to add to its environment.
 function(phonemize program)
-    file(REMOVE_RECURSE "${PREFIX}-lexicon-cache")
     execute_process(
         COMMAND "${CMAKE_COMMAND}" -E env --unset=TUGAPHONE_DATA_DIR --unset=TUGALEX_DATA_DIR --unset=BIFONIA_DATA_DIR
-                --unset=ORTHOGRAPHY2IPA_DATA_DIR "TUGAPHONE_LEXICON_DIR=${PREFIX}-lexicon-cache" ${ARGN}
-                "${program}" phonemize --lect pt-PT "Tenho 23 anos, Sr. Silva; li o Cap. XII."
+                --unset=ORTHOGRAPHY2IPA_DATA_DIR ${ARGN}
+                "${program}" phonemize --lect pt-PT "Tenho 23 anos, Sr. Silva; li o Cap. XII e joguei basebol."
         WORKING_DIRECTORY "${PREFIX}-cwd"
         OUTPUT_VARIABLE output ERROR_VARIABLE error RESULT_VARIABLE result)
     if(NOT result EQUAL 0 OR NOT output STREQUAL expected)
@@ -62,7 +69,7 @@ function(phonemize program)
 endfunction()
 
 run("${CMAKE_COMMAND}" --install "${BUILD_DIR}" --prefix "${PREFIX}")
-edit_expressions("${PREFIX}/${DATADIR}/tugaphone")
+edit_data("${PREFIX}/${DATADIR}/tugaphone")
 phonemize("${PREFIX}/${BINDIR}/tugaphone" "PATH=${PREFIX}/${BINDIR}:$ENV{PATH}")
 # The bare name goes through PATH, from a directory that holds no file of
 # that name, as a shell does.
@@ -89,7 +96,7 @@ file(COPY "${SOURCE_DIR}/data/" DESTINATION "${layouts}/configured/${DATADIR}/tu
 set(static "${layouts}/static/usr/local")
 run("${CMAKE_COMMAND}" --install "${layouts}/build-OFF" --prefix "${static}")
 file(COPY "${static}/${DATADIR}/tugaphone" DESTINATION "${layouts}/static/usr/${DATADIR}")
-edit_expressions("${static}/${DATADIR}/tugaphone")
+edit_data("${static}/${DATADIR}/tugaphone")
 phonemize("${static}/${BINDIR}/tugaphone")
 
 set(shared "${layouts}/shared")
@@ -97,7 +104,7 @@ run("${CMAKE_COMMAND}" --install "${layouts}/build-ON" --prefix "${shared}")
 # The path from BINDIR applied to the library dir, <prefix>/lib/share, holds an
 # unedited copy.
 file(COPY "${SOURCE_DIR}/data/" DESTINATION "${shared}/lib/${DATADIR}/tugaphone")
-edit_expressions("${shared}/${DATADIR}/tugaphone")
+edit_data("${shared}/${DATADIR}/tugaphone")
 file(COPY "${shared}/${BINDIR}/tugaphone" DESTINATION "${layouts}/outside")
 # Prepended, so that a build with shared system dependencies still finds them.
 set(library_paths "")

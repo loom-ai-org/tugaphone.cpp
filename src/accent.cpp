@@ -438,8 +438,8 @@ AccentOverlay AccentOverlay::from_json(std::string_view text) { return overlay_f
 std::string force_accent(std::string_view text, std::string_view lect, std::string_view mode, std::string_view base_lect,
                          const AccentOverlay* overlay, const std::vector<RespellRule>& rules,
                          const Phonemizer& phonemize) {
-    const std::string target = registry::resolve_lect(lect);
-    const std::string base = registry::resolve_lect(base_lect);
+    const std::string target = detail::resolve_lect_from(lect, "force_accent lect");
+    const std::string base = detail::resolve_lect_from(base_lect, "force_accent base_lect");
     if (mode == "ipa") {
         std::string out = run_phonemizer(phonemize, std::string(text), target);
         if (overlay != nullptr) out = overlay->apply(out, "ipa");
