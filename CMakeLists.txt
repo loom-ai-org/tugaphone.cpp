@@ -209,8 +209,7 @@ if(TUGAPHONE_BUILD_TESTS)
     find_package(Threads REQUIRED)
     target_link_libraries(tugaphone_parity PRIVATE tugaphone tugaphone_benchmark_core orthography2ipa::orthography2ipa ZLIB::ZLIB Threads::Threads)
     # One parity test per module, so that ctest -j runs the modules in parallel
-    # and the timeout applies to each module. The engine writes the tugalex
-    # lexicon TSVs to its cache, one cache per test.
+    # and the timeout applies to each module.
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS tests/parity/modules.hpp)
     file(READ ${CMAKE_CURRENT_SOURCE_DIR}/tests/parity/modules.hpp _parity_header)
     string(REGEX MATCHALL "X\\([a-z_]+\\)" _parity_modules "${_parity_header}")

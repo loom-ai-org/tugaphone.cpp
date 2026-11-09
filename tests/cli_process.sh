@@ -33,8 +33,9 @@ if [ "$out" != "u ˈɡatu u ˈɡatu u ˈkɐ̃w̃ u ˈsɔlu u ˈkwak i u ˈʃiʃ"
 fi
 
 # A lect that takes a lexicon fails with LookupError when the data directory
-# holds no file or two files for it, as Python does when no provider serves the
-# lect. A lect with no lexicon still reads.
+# holds no file or two files for it. Python raises LookupError there too, but
+# its text differs; PARITY.md lists the difference. A lect with no lexicon
+# still reads.
 mv "$data/o2i-lexicons/pt-PT/infopedia.tsv" "$data/infopedia.tsv"
 expected="LookupError: no installed package supplies a lexicon file for 'pt-PT'"
 for files in 0 2; do
