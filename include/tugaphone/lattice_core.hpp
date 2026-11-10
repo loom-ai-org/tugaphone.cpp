@@ -1,9 +1,9 @@
 // tugaphone.lattice_core: phonemization on the orthography2ipa lattice. A
-// lect's engine is an orthography2ipa::G2P with tugaphone's layers:
-// the normalizer (text_normalization, number_utils and bifonia homograph
-// marks), the residual lexicon of o2i-lexicons for pt-PT and pt-BR, and the
-// bundled splitter of orthography2ipa. The lexicon belongs to the engine, so a
-// plain orthography2ipa::G2P in the same process stays on the rules.
+// lect's engine is an orthography2ipa::G2P with tugaphone's layers in its
+// Pipeline: the expansion (text_normalization and number_utils), the bifonia
+// homograph marks, and the exceptions and patches of o2i-lexicons for pt-PT
+// and pt-BR. The lexicon belongs to the engine, so a plain
+// orthography2ipa::G2P in the same process stays on the rules.
 #pragma once
 
 #include <functional>
@@ -24,15 +24,18 @@ namespace tugaphone::lattice_core {
 // _VALID_CONTACT.
 const std::vector<std::string>& VALID_CONTACT();
 
-// _normalizer(lect)(text): the text the lattice of `lect` reads.
-std::string normalize(std::string_view text, const std::string& lect);
+// _expander(lect)(text): the orthographic rewrites, then the number
+// expansion. The engine runs it on each plain run of the text.
+std::string expand(std::string_view text, const std::string& lect);
 
-// engine(lect): the cached engine of an orthography2ipa lect code. The
-// normalizer reaches the engine as a plugin override, which transcribe(),
-// features() and sentence_lattice() all apply. The lexicon of a lect in
-// registry::PACKAGED_LEXICON_LECTS comes from o2i-lexicons/<lect>/ in the data
-// directory, and a missing file raises LookupError. Any other lect gets an
-// empty lexicon, so only the rules answer it.
+// engine(lect): the cached engine of an orthography2ipa lect code. Its
+// Pipeline holds expand() as `expand` and the bifonia marks of `lect` as
+// `mark`, which transcribe(), features() and sentence_lattice() all apply. A
+// lect in registry::PACKAGED_LEXICON_LECTS takes the exceptions in
+// o2i-lexicons/<lect>/ and the patches in o2i-lexicons/patches/<lect>/ of the
+// data directory. An exception wins over a patch, and a missing file raises
+// LookupError. Any other lect gets an empty lexicon, so only the rules answer
+// it.
 // orthography2ipa.cpp has no lock of its own: phonemize() holds a lock while
 // it transcribes, but a caller that transcribes with this engine must not do
 // so while another thread calls into tugaphone.

@@ -138,9 +138,25 @@ def corpora(repo):
     ]
     out.append(("engine", [rec(t, lect) for t in engine_texts for lect in NATIONAL
                            for rec in (engine_lattice, engine_features)]))
-    norm = lc._normalizer
-    out.append(("normalizer", [["normalize", s, lect, common.call(norm(lect), s)]
-                               for s in tests + texts + numeral_homographs for lect in ("pt-PT", "pt-BR", "pt-AO")]))
+    out.append(("expander", [["expand", s, lect, common.call(lc._expander(lect), s)]
+                             for s in tests + texts + numeral_homographs for lect in ("pt-PT", "pt-BR", "pt-AO")]))
+    # Forced words: expand rewrites each plain run alone, and mark reads the
+    # whole sentence, with each forced word as spelled.
+    markup = [
+        '<phoneme ph="ˈʒoɡu">jogo</phoneme> o jogo 2 vezes.',
+        'Eu <phoneme ph="ˈʒɔɡu">jogo</phoneme> e tu jogas.',
+        'O <phoneme ph="ˈmɔʎu">molho</phoneme> e o molho.',
+        'Tenho <phoneme ph="ˈviɲtɨ">23</phoneme> anos e 23 jogos.',
+        'O Sr. <phoneme ph="ˈsiɫvɐ">Silva</phoneme> leu o Cap. XII.',
+        'A sede <phoneme ph="ˈsedɨ">sede</phoneme> sede.',
+        '<phoneme ph="u">o</phoneme> <phoneme ph="ˈɡatu">gato</phoneme>',
+        'Às 9h o <phoneme ph="ˈʒoɡu">jogo</phoneme> do 1º jogo.',
+        '2 <phoneme ph="ʒɔɡuʃ">jogos</phoneme>',
+        'colher <phoneme ph="ʎ">x</phoneme> colher',
+    ]
+    out.append(("markup", [phon(s, lect) for s in markup for lect in NATIONAL] +
+                [rec(s, lect) for s in markup for lect in ("pt-PT", "pt-BR")
+                 for rec in (engine_lattice, engine_features)]))
     packaged = lexicon_words()
     out.append(("engine_lexicon", [["engine_lexicon", lect, sorted(map(list, lc.engine(lect).pipeline.lexicon.items()))]
                                    for lect in lects]))

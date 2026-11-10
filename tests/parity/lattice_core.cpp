@@ -104,7 +104,7 @@ std::string record_lattice_core(const Value& v) {
     if (fn == "force_accent") {
         return head(v) + guard([&] { return J(tugaphone::accent::force_accent(v[1].str, v[2].str, v[3].str)); }) + "]";
     }
-    if (fn == "normalize") return head(v) + guard([&] { return J(lc::normalize(v[1].str, v[2].str)); }) + "]";
+    if (fn == "expand") return head(v) + guard([&] { return J(lc::expand(v[1].str, v[2].str)); }) + "]";
     if (fn == "VALID_CONTACT") return "[" + J(fn) + "," + J(lc::VALID_CONTACT()) + "]";
     if (fn == "validate_contact") {
         return head(v) + guard([&] {

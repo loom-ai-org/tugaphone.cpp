@@ -2,9 +2,9 @@
 //
 // TugaphoneG2PPlugin is the full phonemizer behind the shared engine
 // interface. SilabificadorSyllabifier is the Portuguese syllabifier as an
-// orthography2ipa SyllabifierPlugin. Python registers plugins through package
-// entry points; C++ has no such discovery, so a caller that wants either
-// object hands it to orthography2ipa itself.
+// orthography2ipa SyllabifierPlugin. Nothing discovers either class: a caller
+// that wants the syllabifier passes it to an engine in
+// orthography2ipa::Pipeline::syllabifier.
 #pragma once
 
 #include <optional>

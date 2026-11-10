@@ -25,6 +25,7 @@ import sys
 import tempfile
 import traceback
 import types
+import warnings
 
 from . import common
 
@@ -150,7 +151,11 @@ def run_main(bench, args, columns, options=None):
         status, is_traceback = 0, False
         sys.argv = ["benchmark.py", *args]
         try:
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            # A warning goes to the stderr of the process in the C++ driver, not
+            # to the record, so the record holds none. The cli goldens hold the
+            # warning text of the executable.
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err), warnings.catch_warnings():
+                warnings.simplefilter("ignore")
                 bench.main()
         except SystemExit as exc:
             status = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)

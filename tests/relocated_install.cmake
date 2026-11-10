@@ -35,10 +35,10 @@ function(run)
     endif()
 endfunction()
 
-set(expected "ˈtɛɲu ˈvĩt i ˈtɾez ˈɐnuʃ sɨˈɲoɾ ˈsiɫvɐ ˈli u kɐˈpitulu ʃiˈi i ʒuˈɡej ˈzzz\n")
+set(expected "ˈteɲu ˈvĩt i ˈtɾez ˈɐnuʃ sɨˈɲoɾ ˈsiɫvɐ ˈli u kɐˈpitulu ʃiˈi i ʒuˈɡej ˈzzz\n")
 
 # Lists "capítulo XII" as a letter expression in the data directory *dir*, and
-# replaces the reading of "basebol" in its pt-PT lexicon. "Cap." expands to
+# replaces the reading of "basebol" in its pt-PT patches. "Cap." expands to
 # "Capítulo" before the numeral rule reads the word before "XII".
 function(edit_data dir)
     file(READ "${dir}/letter_expressions.json" expressions)
@@ -47,7 +47,7 @@ function(edit_data dir)
         message(FATAL_ERROR "${dir}/letter_expressions.json has no expressions object")
     endif()
     file(WRITE "${dir}/letter_expressions.json" "${edited}")
-    set(lexicon "${dir}/o2i-lexicons/pt-PT/infopedia.tsv")
+    set(lexicon "${dir}/o2i-lexicons/patches/pt-PT/infopedia.tsv")
     file(READ "${lexicon}" entries)
     string(REPLACE "basebol\tbejzɨˈbɔɫ\n" "basebol\tˈzzz\n" edited "${entries}")
     if(edited STREQUAL entries)
