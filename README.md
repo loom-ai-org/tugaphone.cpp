@@ -1,6 +1,6 @@
 # tugaphone.cpp
 
-A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package 1.6.2a1, byte for byte. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
+A C++17 port of [tugaphone](https://github.com/TigreGotico/tugaphone), which turns Portuguese text into IPA for the dialects of Portugal, Brazil, Africa and Asia. The output is the same as the Python package 1.6.3a2, byte for byte. See [PARITY.md](PARITY.md) for the tests and the list of the ported names.
 
 The whole package is ported: the lattice phonemizer, the tokenizer, the dialect registry and inventories, text normalization, the number reader, the language detector, code-switching, accent forcing, the G2P plugin classes and the command line.
 
@@ -48,7 +48,7 @@ To use installed copies of the four ports, set `-DTUGAPHONE_USE_SYSTEM_DEPS=ON`.
 
 The library reads its data at run time. `cmake --install` puts the files in `<prefix>/share/tugaphone`, and the library looks there by default. The library finds that directory from the path of the program or the shared library that holds it, so an install that `cmake --install --prefix` puts in another prefix finds its own data. The tugalex, bifonia and orthography2ipa data follow the same rule. When that directory does not hold the data, the library uses the install location that the build compiles in. To use another directory, set the environment variable `TUGAPHONE_DATA_DIR` or call `tugaphone::set_data_dir()` before the first call. The tugalex lexicon has its own data directory and its own variable, `TUGALEX_DATA_DIR`. The bifonia homograph tables have `BIFONIA_DATA_DIR`. The tests set all three to the copies in the source trees.
 
-The pt-PT and pt-BR engines read their lexicon from `o2i-lexicons/<lect>/` in this data directory. The other lects have no lexicon. If the file of a lect is missing, the first call for that lect fails with LookupError. The entries are licensed CC-BY-SA-4.0; `<source>.meta.json` beside each file names the source, and `LICENSE.nilc` holds the licence of the pt-BR source.
+The pt-PT and pt-BR engines read their lexicon from this data directory: the exceptions in `o2i-lexicons/<lect>/` and the patches in `o2i-lexicons/patches/<lect>/`. The other lects have no lexicon. If a file of a lect is missing, the first call for that lect fails with LookupError. The entries are licensed CC-BY-SA-4.0; `<source>.meta.json` beside each file names the source, and `LICENSE.nilc` holds the licence of the pt-BR source.
 
 The orthography2ipa data has its own variable, `ORTHOGRAPHY2IPA_DATA_DIR`, and its own call, `orthography2ipa::set_data_directory()`. The registry gets its list of lects from this data. If the directory is missing, the library does not stop: `list_dialects()` returns an empty list, and each code resolves to the default lect "pt-PT". The Python package does the same when its orthography2ipa data is missing. If `list_dialects()` is empty, check `ORTHOGRAPHY2IPA_DATA_DIR`.
 

@@ -23,9 +23,9 @@ include(CMakePackageConfigHelpers)
 # The four C++ ports tugaphone uses. By default each one builds from its pinned
 # submodule; with TUGAPHONE_USE_SYSTEM_DEPS they come from installed packages.
 if(TUGAPHONE_USE_SYSTEM_DEPS)
-    find_package(silabificador 2.1.1 CONFIG REQUIRED)
+    find_package(silabificador 2.1.11 CONFIG REQUIRED)
     find_package(tugalex 2.2.2 CONFIG REQUIRED)
-    find_package(bifonia 0.3.7 CONFIG REQUIRED)
+    find_package(bifonia 0.3.9 CONFIG REQUIRED)
     find_package(orthography2ipa CONFIG REQUIRED)
 else()
     foreach(_dep silabificador tugalex bifonia orthography2ipa)
