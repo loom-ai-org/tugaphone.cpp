@@ -119,6 +119,14 @@ std::string record_lattice_core(const Value& v) {
         return head(v) + guard([&] { return J(o2i::G2P(v[1].str).transcribe_word(v[2].str)); }) + "]";
     }
     if (fn == "process_lexicon") return head(v) + process_lexicon(v[1].str, v[2].str) + "]";
+    if (fn == "pipeline") {
+        const std::string& lect = v[1].str;
+        return "[" + J(fn) + "," + J(lect) + "," + guard([&] {
+                   const o2i::Pipeline pipeline = lc::pipeline(lect);
+                   return list({J(static_cast<long long>(pipeline.lexicon->size())),
+                                J(pipeline.expand(" Tenho 23 anos, Sr. Silva. ")), J(pipeline.mark("Eu jogo o jogo."))});
+               }) + "," + guard([&] { return J(lc::engine(lect).transcribe("o jogo")); }) + "]";
+    }
     return "unknown call " + fn;
 }
 

@@ -371,7 +371,10 @@ std::string rules_only_ipa(const std::string& word, const std::string& dialect_c
     static std::map<std::string, tokenizer::DialectPtr> cache;
     auto it = cache.find(dialect_code);
     if (it == cache.end()) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
         dialects::DialectInventory inv = registry::get_dialect_inventory(dialect_code);
+#pragma GCC diagnostic pop
         inv.IRREGULAR_WORDS = {};
         it = cache.emplace(dialect_code, std::make_shared<const dialects::DialectInventory>(std::move(inv))).first;
     }

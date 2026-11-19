@@ -20,9 +20,6 @@ std::string TugaPhonemizer::force_accent(std::string_view text, std::string_view
     return accent::force_accent(text, lect, mode, base_lect, overlay);
 }
 
-bool TugaPhonemizer::is_supported(std::string_view lang) {
-    detail::resolve_lect_from(lang, "is_supported");
-    return true;
-}
+bool TugaPhonemizer::is_supported(std::string_view lang) { return registry::is_supported(lang); }
 
 }  // namespace tugaphone

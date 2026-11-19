@@ -74,18 +74,6 @@ Warnings& warnings() {
     return state;
 }
 
-// warnings.warn(message, stacklevel=2) from `call_site`. The default Python
-// filter prints a text once for each location of the caller.
-void warn(std::string_view call_site, const std::string& message) {
-    Warnings& state = warnings();
-    const std::lock_guard<std::mutex> lock(state.mutex);
-    if (state.handler) {
-        state.handler(message);
-    } else if (state.shown.emplace(call_site, message).second) {
-        std::cerr << "UserWarning: " << message << "\n";
-    }
-}
-
 }  // namespace
 
 const std::set<std::string>& PACKAGED_LEXICON_LECTS() {
@@ -149,9 +137,20 @@ std::optional<std::string> registered(const std::string& code) {
     return std::nullopt;
 }
 
+// registry.py _named_lect: the canonical dialect that the lowercased tag key
+// names, or nullopt.
+std::optional<std::string> named_lect(const std::string& key) {
+    const auto alias = kAliases.find(key);
+    return registered(alias == kAliases.end() ? key : alias->second);
+}
+
 }  // namespace
 
 std::string resolve_lect(std::string_view lang) { return detail::resolve_lect_from(lang, "resolve_lect"); }
+
+bool is_supported(std::string_view lang) {
+    return named_lect(to_utf8(detail::lower(from_utf8(normalize_dialect_code(lang))))).has_value();
+}
 
 std::optional<std::string> lexicon_region(std::string_view) { return std::nullopt; }
 
@@ -172,20 +171,29 @@ std::string resolve_dialect(std::string_view lang) { return detail::resolve_lect
 
 }  // namespace tugaphone::registry
 
+void tugaphone::detail::warn(std::string_view call_site, const std::string& message, std::string_view category) {
+    registry::Warnings& state = registry::warnings();
+    const std::lock_guard<std::mutex> lock(state.mutex);
+    if (state.handler) {
+        state.handler(message);
+    } else if (state.shown.emplace(std::string(category) + ":" + std::string(call_site), message).second) {
+        std::cerr << category << ": " << message << "\n";
+    }
+}
+
 std::string tugaphone::detail::resolve_lect_from(std::string_view lang, std::string_view call_site) {
     const std::string canon = to_utf8(lower(from_utf8(registry::normalize_dialect_code(lang))));
     std::string key = canon;
     std::optional<std::string> lect;
     while (!key.empty()) {
-        const auto alias = registry::kAliases.find(key);
-        lect = registry::registered(alias == registry::kAliases.end() ? key : alias->second);
+        lect = registry::named_lect(key);
         if (lect) break;
         const size_t dash = key.rfind('-');
         key.resize(dash == std::string::npos ? 0 : dash);
     }
     const std::string resolved = lect.value_or("pt-PT");
     if (key != canon || !lect) {
-        registry::warn(call_site, py_str_repr(pyio::fsdecode(lang)) + " is not a tugaphone lect; using " + resolved);
+        detail::warn(call_site, py_str_repr(pyio::fsdecode(lang)) + " is not a tugaphone lect; using " + resolved);
     }
     return resolved;
 }

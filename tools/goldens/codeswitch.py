@@ -36,6 +36,11 @@ def ipa_strings():
     return common.unique(keys + fuzz + common.UNICODE_PROBES)
 
 
+def runs_of(text, contact, default_side):
+    """split_runs as JSON lists; a MarkupError is part of the contract."""
+    return common.call(lambda: [list(r) for r in codeswitch.split_runs(text, contact, default_side=default_side)])
+
+
 def corpora(repo):
     words = contact_corpus.words(repo)
     sentences = contact_corpus.sentences(repo)
@@ -68,7 +73,7 @@ def corpora(repo):
                 for contact in common.unique(contacts):
                     side = SIDES[i % 3]
                     runs.append(["split_runs", s, contact, side, path,
-                                 [list(r) for r in codeswitch.split_runs(s, contact, default_side=side)]])
+                                 runs_of(s, contact, default_side=side)])
     transcribe = []
     contact_words = contact_corpus.contact_words()
     tests = [s for s in common.test_strings(repo) if s and " " not in s and len(s) <= 20]
@@ -89,7 +94,7 @@ def corpora(repo):
     for s in contact_corpus.apostrophe_sentences() + sentences[:200]:
         for contact in CONTACTS:
             public.append(["split_runs_public", s, contact, "en",
-                           [list(r) for r in codeswitch.split_runs(s, contact, default_side="en")]])
+                           runs_of(s, contact, default_side="en")])
     # Abbreviations and their numbers under every contact mode and both classifiers.
     abbreviations = []
     for path in ("detector", "fallback"):
@@ -98,7 +103,7 @@ def corpora(repo):
             for s in abbreviation_corpus.sentences(repo):
                 for contact in CONTACTS:
                     abbreviations.append(["split_runs", s, contact, "en", path,
-                                          [list(r) for r in codeswitch.split_runs(s, contact, default_side="en")]])
+                                          runs_of(s, contact, default_side="en")])
     return [("constants", consts), ("heuristic", heuristic), ("nativize", nativize), ("routing", routing),
             ("split_runs", runs), ("transcribe_contact", transcribe), ("apostrophe", apostrophe),
             ("split_runs_public", public), ("abbreviations", abbreviations)]

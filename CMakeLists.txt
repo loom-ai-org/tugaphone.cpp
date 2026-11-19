@@ -98,7 +98,6 @@ add_library(tugaphone
     src/lattice_core.cpp
     src/tokenizer.cpp
     src/tugaphone.cpp
-    src/plugin.cpp
     src/pyio.cpp
     src/argparse.cpp
     src/cli.cpp
@@ -111,8 +110,8 @@ target_include_directories(tugaphone
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-# plugin.hpp derives from orthography2ipa::SyllabifierPlugin, so orthography2ipa
-# is part of the public interface.
+# lattice_core.hpp returns an orthography2ipa::Pipeline and an
+# orthography2ipa::G2P, so orthography2ipa is part of the public interface.
 target_link_libraries(tugaphone
     PUBLIC tugalex::tugalex orthography2ipa::orthography2ipa
     PRIVATE bifonia::bifonia silabificador::silabificador
@@ -198,7 +197,6 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/accent.cpp
         tests/parity/lattice_core.cpp
         tests/parity/package.cpp
-        tests/parity/plugin.cpp
         tests/parity/cli.cpp
         tests/parity/benchmark.cpp
         tests/parity/tokenizer.cpp

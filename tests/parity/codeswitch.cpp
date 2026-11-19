@@ -41,9 +41,11 @@ std::string record_codeswitch(const Value& v) {
     if (fn == "classify") return head(v) + J(cs::internal::classify(w, v[2].str, path_detector(v[3]))) + "]";
     if (fn == "is_contact") return head(v) + J(cs::internal::is_contact(w, path_detector(v[2]))) + "]";
     if (fn == "split_runs") {
-        return head(v) + run_list(cs::internal::split_runs(w, v[2].str, v[3].str, path_detector(v[4]))) + "]";
+        return head(v) + guard([&] { return run_list(cs::internal::split_runs(w, v[2].str, v[3].str, path_detector(v[4]))); }) + "]";
     }
-    if (fn == "split_runs_public") return head(v) + run_list(cs::split_runs(w, v[2].str, v[3].str)) + "]";
+    if (fn == "split_runs_public") {
+        return head(v) + guard([&] { return run_list(cs::split_runs(w, v[2].str, v[3].str)); }) + "]";
+    }
     if (fn == "transcribe_contact") return head(v) + guard([&] { return J(cs::transcribe_contact(w, v[2].str)); }) + "]";
     return "unknown call " + fn;
 }

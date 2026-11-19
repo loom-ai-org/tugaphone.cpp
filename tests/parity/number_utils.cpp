@@ -3,6 +3,7 @@
 #include "common.hpp"
 #include "modules.hpp"
 #include "tugaphone/ovos_number_parser.hpp"
+#include "tugaphone/registry.hpp"
 
 namespace parity {
 
@@ -75,8 +76,9 @@ std::string token(const std::string& w) {
         }
     }
     const auto [core, trail] = NP::split_trailing_punctuation(w);
+    const auto [edge_lead, edge_core, edge_trail] = NP::split_edges(w);
     return "[\"token\"," + J(w) + "," +
-           list({list({J(core), J(trail)}), guard([&] { return N(NP::to_int(w)); }),
+           list({list({J(core), J(trail)}), list({J(edge_lead), J(edge_core), J(edge_trail)}), guard([&] { return N(NP::to_int(w)); }),
                  guard([&] { return J(NP::is_int(w)); }), guard([&] { return N(NP::to_float(w)); }),
                  guard([&] { return J(NP::is_float(w)); }), guard([&] { return J(NP::is_decimal(w)); }),
                  guard([&] { return J(NP::is_scientific_notation(w)); }), list(scientific)}) +
@@ -133,6 +135,17 @@ std::string record_number_utils(const Value& v) {
     if (fn == "normalize_numbers") {
         return head(v) + guard([&] {
                    return J(nu::normalize_numbers(v[1].str, v[2].str, v[3].boolean, opt_str(v[4])));
+               }) + "]";
+    }
+    if (fn == "unread") {
+        return head(v) + guard([&] {
+                   std::vector<std::string> warned;
+                   tugaphone::registry::set_warning_handler(
+                       [&](const std::string& message) { warned.push_back(message); });
+                   const std::string result =
+                       guard([&] { return J(nu::normalize_numbers(v[1].str, v[2].str, false)); });
+                   tugaphone::registry::set_warning_handler(nullptr);
+                   return list({result, J(warned)});
                }) + "]";
     }
     return "unknown call " + fn;

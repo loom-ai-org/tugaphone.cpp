@@ -1,6 +1,6 @@
 # Parity with the Python tugaphone
 
-This port gives the same bytes as the Python package tugaphone 1.6.3a2 for each function it ports. The parity test proves this. It runs every golden record in C++ and compares the result with the Python output, byte for byte.
+This port gives the same bytes as the Python package tugaphone 1.7.1 for each function it ports. The parity test proves this. It runs every golden record in C++ and compares the result with the Python output, byte for byte.
 
 ## How parity is tested
 
@@ -8,7 +8,7 @@ The goldens are in `tests/goldens/<module>.jsonl.gz`, one file for each module. 
 
 The corpora for each module are these:
 
-- Every string literal of the reference tests, read from the tag `1.6.3a2`.
+- Every string literal of the reference tests, read from the tag `1.7.1`.
 - Every dialect and lect code, with case variants and aliases.
 - A rule-coverage set built from the module tables.
 - Each lexicon noun that ends in -agem or has a hyphen, after a number.
@@ -17,7 +17,7 @@ The corpora for each module are these:
 - The five version constants.
 - Unicode probes and a seeded fuzz set.
 
-The test `tugaphone_parity` prints one line for each module, such as `registry: 1692 in, 1692 checked, 0 mismatches, 0 expected divergences, 0 stale entries`. The test fails if a record has a mismatch, or if the number of records checked is not the count in the header. The file `tests/parity/expected_divergences.tsv` lists the records that do not match until a fix in a dependency lands, with the fix that each record waits on. A listed record does not fail the test. The test fails if a listed record matches or is not in the goldens. Then the entry must go from the list.
+The test `tugaphone_parity` prints one line for each module, such as `registry: 1707 in, 1707 checked, 0 mismatches, 0 expected divergences, 0 stale entries`. The test fails if a record has a mismatch, or if the number of records checked is not the count in the header. The file `tests/parity/expected_divergences.tsv` lists the records that do not match until a fix in a dependency lands, with the fix that each record waits on. A listed record does not fail the test. The test fails if a listed record matches or is not in the goldens. Then the entry must go from the list.
 
 ctest runs one test for each module, `parity_<module>`, so `ctest -j` runs the modules in parallel. Under ASan the engine goldens take more than an hour. The sanitizer job thus sets `TUGAPHONE_LATTICE_CORE_STRIDE`, and `--stride <n>` checks every n-th engine record. A listed divergence of a record that is not checked is not counted.
 
@@ -27,18 +27,18 @@ The header of each golden file names the reference versions:
 
 | Package | Version |
 | --- | --- |
-| tugaphone | 1.6.3a2 |
-| tugalex | 2.2.2a1 |
-| orthography2ipa | 7.122.20a2 |
-| o2i-lexicons | 0.7.14a1 |
-| silabificador | 2.1.11a1 |
-| bifonia | 0.3.9a1 |
+| tugaphone | 1.7.1 |
+| tugalex | 2.5.2a1 |
+| orthography2ipa | 7.123.12a2 |
+| o2i-lexicons | 0.7.18a4 |
+| silabificador | 2.1.14a1 |
+| bifonia | 0.5.0 |
 | ovos-number-parser | 0.24.3a1 |
 | markovonnx | 1.0.2a1 |
-| linguatag | 0.1.5a1 |
+| linguatag | 0.3.0a1 |
 | langcodes | 3.5.1 |
 
-linguatag and langcodes decide how orthography2ipa resolves a language code. Each submodule is at parity with the release in the table: orthography2ipa.cpp with orthography2ipa 7.122.20a2, silabificador.cpp with silabificador 2.1.11a1, bifonia.cpp with bifonia 0.3.9a1 and tugalex.cpp with tugalex 2.2.2a1. PyPI has newer alphas of orthography2ipa than 7.122.20a2. The reference stays at 7.122.20a2 because orthography2ipa.cpp holds byte parity with that release, and 7.122.20a2 meets the floor `>=7.122.11a4` of tugaphone 1.6.3a2. o2i-lexicons 0.7.14a1 is the newest release that installs with orthography2ipa 7.122.20a2: later releases require orthography2ipa 7.122.23a2 or newer. tugalex stays at 2.2.2a1, the release of tugalex.cpp. PyPI has tugalex 2.3.0a1. All 15 goldens were dumped again with tugalex 2.3.0a1 and the other pins unchanged, and the 1,259,229 records are byte-identical to the 2.2.2a1 records. So 2.3.0a1 changes no tugaphone output that the goldens hold. Each of these releases meets the floor of tugaphone 1.6.3a2.
+linguatag and langcodes decide how orthography2ipa resolves a language code. Each submodule is at parity with the release in the table: orthography2ipa.cpp with orthography2ipa 7.123.12a2, silabificador.cpp with silabificador 2.1.14a1, bifonia.cpp with bifonia 0.5.0 and tugalex.cpp with tugalex 2.5.2a1. Each release meets its floor in tugaphone 1.7.1. linguatag 0.3.0a1 and o2i-lexicons 0.7.18a4 are the releases that the orthography2ipa.cpp CI installs for its reference. ovos-number-parser 0.24.3a1 is the release that the number reader of this port follows.
 
 ## Python semantics the port keeps
 
@@ -97,6 +97,8 @@ The goldens hold the score and the detected language of many words. These are th
 
 `tugaphone.codeswitch` is ported in full, in `include/tugaphone/codeswitch.hpp`. `split_runs` uses the Markov detector when the models load, and the letter and stopword heuristics when they do not. The goldens cover both paths: the dumper replaces `langdetect.get_detector` with a function that returns None for the fallback path.
 
+`split_runs` reads the markup first, with `orthography2ipa::markup::parse_markup`, so malformed markup throws the MarkupError that the engine throws for the same text, in every contact mode. Its tokens are the matches of the `_TOKEN` pattern of Python, run by the Python-compatible regular expression engine of the port: a run of non-space characters in which a whole `<phoneme …>…</phoneme>` element counts as one unit, spaces and all. A token that holds a `<phoneme` tag is always Portuguese, so the Portuguese engine reads its markup and no detector sees the forced word.
+
 In every contact mode except "none", `split_runs` keeps a token Portuguese when `text_normalization::stays_portuguese` claims it: an abbreviation that `lattice_core::expand` rewrites in its context, and a reference marker with its number ("Cap. XII"). The router's decision for one word is the `is_foreign` argument. A single I, V or X after a marker is its number only when the router keeps the word before the marker and the word after the numeral Portuguese. The `abbreviations` corpora of text_normalization, codeswitch and package hold the sentences of `tests/test_codeswitch_abbreviations.py` and the review probes of TigreGotico/tugaphone#183, in every contact mode and with both classifiers. The `stays_portuguese` corpus calls the function with no foreign word, with each word foreign on its own, with every word foreign, and with the words the router sends out.
 
 `transcribe_contact` calls orthography2ipa.cpp for the contact lect (es-ES, fr-FR or en-US) and maps the result to Portuguese phones with the same tables. English words with an internal apostrophe, ASCII or U+2019, stay one word: `transcribe_contact("don't", "en")` gives "dant", as Python does. The goldens hold 216 such records.
@@ -150,7 +152,7 @@ Time and memory grow linearly with the subject in both engines, but the C++ engi
 
 ## The lattice engine
 
-`tugaphone.lattice_core` is ported in full, in `include/tugaphone/lattice_core.hpp`. The engine of a lect is an `orthography2ipa::G2P` from orthography2ipa.cpp, and tugaphone gives it its layers through the fields of an `orthography2ipa::Pipeline`, as Python does. The `expand` field is `lattice_core::expand()`, the port of `_expander`: `normalize_orthography`, then `normalize_numbers`. The engine runs it on each plain run of the text, so it never sees a `<phoneme>` tag or a forced word. The `mark` field is `bifonia::add_extra_diacritics` with the lect. The engine runs it once on the whole sentence after `expand`, and a forced word is in that text as spelled. The engine then removes the combining marks from the output of `mark` and checks that the result is the input.
+`tugaphone.lattice_core` is ported in full, in `include/tugaphone/lattice_core.hpp`. The engine of a lect is an `orthography2ipa::G2P` from orthography2ipa.cpp, and tugaphone gives it its layers through the fields of an `orthography2ipa::Pipeline`, as Python does. The `expand` field is `lattice_core::expand()`, the port of `_expander`: `normalize_orthography`, then `normalize_numbers`. The engine runs it on each plain run of the text, so it never sees a `<phoneme>` tag or a forced word. It keeps the whitespace at each end of a run, so `mark` reads a forced word apart from the words next to it. The `mark` field is `bifonia::add_extra_diacritics` with the lect. The engine runs it once on the whole sentence after `expand`, and a forced word is in that text as spelled. The engine then removes the combining marks from the output of `mark` and checks that the result is the input.
 
 The pipeline also holds the lexicon of the lect. It has no syllabifier, so the engine uses the bundled splitter of orthography2ipa. Nothing discovers a syllabifier, so a Pipeline field is the only way that a syllabifier reaches an engine. pt-PT and pt-BR, the lects in `registry::PACKAGED_LEXICON_LECTS()`, take the exceptions and the patches of o2i-lexicons, as `packaged_lexicon(lect, patches=True)` gives them. An exception is a word whose reading the spelling does not determine. A patch is a word that a rule could reach and that the rules of the reference get wrong. An exception wins over a patch for the same word. Every other lect gets an empty lexicon, so a lexicon registered for the whole process does not reach it. The lexicon belongs to the engine, so a plain `orthography2ipa::G2P` in the same process stays on the rules. A contact mode other than "none" splits the text with `codeswitch::split_runs` and transcribes each contact token with `codeswitch::transcribe_contact`. `phonemize_runs()` is the loop that joins the runs. The goldens also call it with a fixed contact transcriber, which `tools/goldens/lattice_core.py` and `tests/parity/lattice_core.cpp` both define.
 
@@ -160,16 +162,17 @@ The goldens of the engine are these:
 | --- | --- |
 | Each of the 39 lects over the 4,541 unique gold-TSV words | 177,099 |
 | Each gold-TSV row through the lect of its file | 10,093 |
-| The test strings through 7 lects | 12,957 |
+| The test strings through 7 lects | 14,105 |
 | Mixed-language text, 4 lects, contact modes auto, es, fr and en | 1,152 |
 | `respell_word` and `force_accent` with the default phonemizer | 92 |
 | Lect codes, contact codes and the contact loop with a fixed transcriber | 139 |
 | A numeral next to a homograph, through the 39 lects and contact mode auto | 656 |
 | `engine(lect).sentence_lattice()` and `engine(lect).features()` through 7 lects | 434 |
-| `_expander` of each lect and the constants | 5,620 |
+| `_expander` of each lect and the constants | 6,112 |
 | The whole lexicon that the pipeline of each lect holds | 39 |
-| Each of the 3,000 lexicon words through 9 lects, and inside a sentence through pt-PT and pt-BR | 33,000 |
-| Each lexicon word through a plain `G2P`, which takes no lexicon | 6,000 |
+| Each of the 2,962 lexicon words through 9 lects, and inside a sentence through pt-PT and pt-BR | 32,582 |
+| Each lexicon word through a plain `G2P`, which takes no lexicon | 5,924 |
+| `pipeline(lect)` and `engine(lect)` of the national lects and of 7 codes that `list_dialects()` does not name | 14 |
 | A lexicon registered for the process, which reaches a plain `G2P` and not the engine | 12 |
 | Forced words, through 7 lects, and `sentence_lattice()` and `features()` through pt-PT and pt-BR | 110 |
 | Unicode probes and a seeded fuzz set | 1,614 |
@@ -180,33 +183,32 @@ A lexicon TSV edited by hand reads as Python reads it: a key keeps its case, and
 
 orthography2ipa.cpp keeps its specs, lexicons, plugins and regular-expression caches in global maps with no lock. The engine cache and each transcription hold `detail::o2i_registry_mutex()`. The contact engines of codeswitch hold it too, and so does the registry while it resolves a code through orthography2ipa. The test `threads_lattice_core` makes eight first `phonemize` calls in eight threads. The test `threads_tokenizer_codeswitch` builds tokenizer sentences in four threads and makes contact transcriptions in four others. CI runs the `threads_` tests under ThreadSanitizer. The test `threads_package` makes the first calls of ten package entry points in ten threads: the `TugaPhonemizer` methods, the plugin classes and the command line. With the lock made thread-local, ThreadSanitizer reports 35 races in it. The test `threads_registry` starts four contact transcriptions and four first `resolve_lect` calls together. Without the lock in the registry, ThreadSanitizer reports a race on the resolution catalog of orthography2ipa.cpp.
 
-## The package API, the plugin and the command line
+## The package API and the command line
 
-`include/tugaphone/tugaphone.hpp` holds `TugaPhonemizer` and the names that the Python package exports at its top level. `phonemize_sentence` and `force_accent` call the lattice engine. The deprecated `regional_dialect` argument has no effect, as in Python. `include/tugaphone/plugin.hpp` holds `TugaphoneG2PPlugin` and `SilabificadorSyllabifier`. The executable `tugaphone` is the console script `python -m tugaphone`.
+`include/tugaphone/tugaphone.hpp` holds `TugaPhonemizer` and the names that the Python package exports at its top level. `phonemize_sentence` and `force_accent` call the lattice engine. The deprecated `regional_dialect` argument has no effect, as in Python. The executable `tugaphone` is the console script `python -m tugaphone`.
 
 The goldens of these parts are these:
 
 | Corpus | Records |
 | --- | --- |
 | `phonemize_sentence` of each of the 39 lects over the 4,541 unique gold-TSV words, five contact modes in each record | 177,099 |
-| `phonemize_sentence` of each gold-TSV row and of the test strings through 7 lects | 23,050 |
+| `phonemize_sentence` of each gold-TSV row and of the test strings through 7 lects | 24,198 |
 | `phonemize_sentence` of the abbreviation sentences through 7 lects | 2,044 |
 | The acceptance sentence in each lect, `is_supported`, `regional_dialect`, `force_accent`, `respell` and the constants | 546 |
-| The plugin: `syllabify`, `transcribe`, `transcribe_word` with and without a context, `force_accent` and the constants | 9,626 |
 | The command line: help at 15 `COLUMNS` values, 42 error cases at 2 widths, 176 runs, 9 runs with arguments that are not UTF-8, and 14 runs that fail outside argparse or change the environment | 448 |
 | The error lines of overlay JSON, UTF-8 decoding and regular expressions, in the process | 7,036 |
 
 The command-line records run `python -I -m tugaphone` and the C++ executable on the same arguments, and compare standard output, standard error and the exit status. When Python ends with a traceback, for example for an overlay file that does not exist, the record holds the last line of the traceback: the exception class and its message. The C++ executable prints that line alone and exits with status 1. The path of this repository reads as `<root>` in that line. This holds for the exceptions of the libraries too: an unclosed `<phoneme>` tag gives `orthography2ipa.markup.MarkupError`.
 
-Python prints a warning with its source file, line and source text. The record holds its category and text, such as `UserWarning: 'xx' is not a tugaphone lect; using pt-PT`, and the C++ executable prints that line. `registry::set_warning_handler()` replaces the default output, as `warnings.showwarning` does in Python. The default prints a text once for each call site, as the default Python filter does. C++ has no caller location, so the call site is the function of this package that asks. Two calls of `resolve_lect` from two lines of an application print a text once, and Python prints it twice.
+Python prints a warning with its source file, line and source text. The record holds its category and text, such as `UserWarning: 'xx' is not a tugaphone lect; using pt-PT`, and the C++ executable prints that line. `registry::set_warning_handler()` replaces the default output, as `warnings.showwarning` does in Python. The default prints a text once for each call site, as the default Python filter does. C++ has no caller location, so the call site is the function of this package that asks. Two calls of `resolve_lect` from two lines of an application print a text once, and Python prints it twice. `normalize_numbers` names each output form that still holds a digit in an `UnreadFormWarning`, as Python 1.7.1 does, and the C++ library prints it as `UnreadFormWarning: <text>`. Python shows a text once for each call site, and the C++ library shows it once for each function that warns, so a text that two callers of `normalize_numbers` raise prints once. The DeprecationWarning of `tugaphone.dialects`, `tugaphone.tokenizer` and `get_dialect_inventory()` is a compile-time deprecation of `registry::get_dialect_inventory`; C++ has no module import to warn on.
 
 Some command-line records change how the process runs. Two records set `TUGAPHONE_LEXICON_DIR` or `HOME` to a path that cannot be used, and neither variable has an effect. Four records write standard output to `/dev/full`: Python then exits with status 120 and prints the `OSError` of the flush, and so does the C++ executable. Both executables write standard output as Python's `sys.stdout` does. Up to 8,192 bytes wait in the text layer, over a buffer of the block size of the descriptor. A longer output reaches the descriptor inside `print()`, so a failed write there is an uncaught `OSError` with its own errno, and the status is 1. `tests/cli_process.sh` checks this for `/dev/full` and for a closed pipe. It also checks that a short output into a closed pipe exits with 120, because both executables ignore SIGPIPE. Four records run standard output on a pseudo-terminal of a given width with `COLUMNS` unset, so the help wraps at the width of the terminal. Arguments that are not UTF-8 decode as Python's `surrogateescape` does, and an error message shows such a byte as `\udcff`. A `COLUMNS` value above the range of `long` means a width that never wraps, as a Python int does.
 
-Other records run in the process and compare the line that an uncaught exception prints. They hold 2,016 malformed and valid overlay JSON texts, 4,863 byte strings decoded as UTF-8, and 157 malformed regular expressions and replacement templates. So the `json.decoder.JSONDecodeError` message with its line, column and code-point position, the `UnicodeDecodeError` byte range and reason, and the `re.error` position match Python. The test `cli_process` checks the cases that no golden can hold: without the tugalex or bifonia data, the executable prints one error line and exits with status 1. With no exception file or with two for pt-PT, or with no patch file, it prints the LookupError and exits with status 1, and pt-AO still reads. This error differs from Python in its text. The Python LookupError message ends with the installed lects, such as `; installed: ['en-GB', 'pt-BR', 'pt-PT']`, and the C++ message stops after the lect code. With two files, Python also logs the failure of the lexicon provider before the error, and the C++ executable does not. The benchmark exits with status 120 when standard output is `/dev/full`.
+Other records run in the process and compare the line that an uncaught exception prints. They hold 2,016 malformed and valid overlay JSON texts, 4,863 byte strings decoded as UTF-8, and 157 malformed regular expressions and replacement templates. So the `json.decoder.JSONDecodeError` message with its line, column and code-point position, the `UnicodeDecodeError` byte range and reason, and the `re.error` position match Python. The test `cli_process` checks the cases that no golden can hold: without the tugalex or bifonia data, the executable prints one error line and exits with status 1. With no exception file or with two for pt-PT, or with no patch file, it prints the LookupError and exits with status 1, and pt-AO still reads. This error differs from Python in its text. The Python LookupError message ends with the installed lects, such as `; installed: ['en-GB', 'pt-BR', 'pt-PT']`, and the C++ message stops after the lect code. In each of these cases, Python first logs the failure of the lexicon provider, for example `lexicon provider 'o2i_lexicons:patch_tsv_path' failed for 'pt-PT': no packaged patch for 'pt-PT'` with no patch file, or `lexicon provider 'o2i_lexicons:tsv_path' failed for 'pt-PT': no packaged lexicon for 'pt-PT'` with no exception file. The C++ executable prints only the LookupError. The benchmark exits with status 120 when standard output is `/dev/full`.
 
 The acceptance sentence is "Tenho 23 anos, Sr. Silva; li o Cap. XII.". The Python command line has no `--contact` flag, so the contact modes of this sentence are in the `phonemize_sentence` records. The command-line records hold the sentence in every lect, and the `--contact` arguments as the error that argparse gives.
 
-Every package and plugin record matches with the orthography2ipa.cpp submodule pin, with no listed divergence.
+Every package record matches with the orthography2ipa.cpp submodule pin, with no listed divergence.
 
 ## The benchmark
 
@@ -224,8 +226,6 @@ The port keeps these defects of the reference release, because it is held at byt
 - ovos-number-parser keeps the masculine count before a feminine ordinal scale word: feminine ordinal 2002 reads "dois milésima segunda".
 - ovos-number-parser compares the language code with its case, so "PT-PT" raises NotImplementedError.
 - `EuropeanPortuguese` and `BrazilianPortuguese` replace an empty `IRREGULAR_WORDS` with the lexicon map. The African and Timorese classes keep an empty map.
-- `_expander` strips the space at each end of a plain run. So `mark` reads a forced word glued to the next word. For `<phoneme ph="ˈʒoɡu">jogo</phoneme> o jogo 2 vezes.`, mark reads `jogoo jogo duas vezes.`, and the noun in "o jogo" reads [ˈʒɔɡu], the vowel of the verb.
-- With a contact mode other than `none`, `split_runs` cuts a `<phoneme>` tag at its space and sends `<phoneme` to the contact side. The engine then reads the rest of the tag and raises MarkupError, "unclosed <phoneme> tag". So `phonemize_sentence('<phoneme ph="ˈʒoɡu">jogo</phoneme> o jogo 2 vezes.', 'pt-PT', 'en')` raises, and a forced word works only with contact `none`.
 - `normalize_numbers` raises ValueError for an integer part that is not plain digits before "vírgula" and a unit: "1º vírgula 5 m".
 - `normalize_numbers` reads a negative decimal with a zero integer part without its sign in the full pipeline: "-0,5" reads "zero vírgula cinco".
 - `get_number_gender` reads any next word that ends in -a as a feminine noun: "o valor de 2 a 3 varia muito" reads "duas".
@@ -268,6 +268,7 @@ The status names the phase of the port that adds the name. Each name in the tabl
 | `LEXICON_REGION_REMOVAL_VERSION` | constant | `tugaphone::registry::LEXICON_REGION_REMOVAL_VERSION` | phase 1 |
 | `normalize_dialect_code` | function | `tugaphone::registry::normalize_dialect_code` | phase 1 |
 | `resolve_lect` | function | `tugaphone::registry::resolve_lect` | phase 1 |
+| `is_supported` | function | `tugaphone::registry::is_supported` | phase 1 |
 | `lexicon_region` | function | `tugaphone::registry::lexicon_region` | phase 1 |
 | `list_dialects` | function | `tugaphone::registry::list_dialects` | phase 1 |
 | `default_contact` | function | `tugaphone::registry::default_contact` | phase 1 |
@@ -373,6 +374,7 @@ The status names the phase of the port that adds the name. Each name in the tabl
 <!-- inventory:number_utils -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
+| `UnreadFormWarning` | class | `tugaphone::number_utils::UnreadFormWarning` | phase 1 |
 | `NumberParser` | class | `tugaphone::number_utils::NumberParser` | phase 1 |
 | `NumberParser.ORDINAL_MALE` | attribute | `tugaphone::number_utils::NumberParser::ORDINAL_MALE` | phase 1 |
 | `NumberParser.ORDINAL_FEMALE` | attribute | `tugaphone::number_utils::NumberParser::ORDINAL_FEMALE` | phase 1 |
@@ -389,6 +391,9 @@ The status names the phase of the port that adds the name. Each name in the tabl
 | `NumberParser.pronounce_number_word` | method | `tugaphone::number_utils::NumberParser::pronounce_number_word` | phase 1 |
 | `NumberParser.LEADING_PUNCTUATION` | attribute | `tugaphone::number_utils::NumberParser::LEADING_PUNCTUATION` | phase 1 |
 | `NumberParser.TRAILING_PUNCTUATION` | attribute | `tugaphone::number_utils::NumberParser::TRAILING_PUNCTUATION` | phase 1 |
+| `NumberParser.NUMBER_SIGNS` | attribute | `tugaphone::number_utils::NumberParser::NUMBER_SIGNS` | phase 1 |
+| `NumberParser.NUMBER_SUFFIXES` | attribute | `tugaphone::number_utils::NumberParser::NUMBER_SUFFIXES` | phase 1 |
+| `NumberParser.split_edges` | method | `tugaphone::number_utils::NumberParser::split_edges` | phase 1 |
 | `NumberParser.split_trailing_punctuation` | method | `tugaphone::number_utils::NumberParser::split_trailing_punctuation` | phase 1 |
 | `NumberParser.to_int` | method | `tugaphone::number_utils::NumberParser::to_int` | phase 1 |
 | `NumberParser.is_int` | method | `tugaphone::number_utils::NumberParser::is_int` | phase 1 |
@@ -419,6 +424,7 @@ The status names the phase of the port that adds the name. Each name in the tabl
 <!-- inventory:lattice_core -->
 | Python name | Kind | C++ name | Status |
 | --- | --- | --- | --- |
+| `pipeline` | function | `tugaphone::lattice_core::pipeline` | phase 2 |
 | `engine` | function | `tugaphone::lattice_core::engine` | phase 2 |
 | `phonemize` | function | `tugaphone::lattice_core::phonemize` | phase 2 |
 | `clear_caches` | function | `tugaphone::lattice_core::clear_caches` | phase 2 |
@@ -434,15 +440,15 @@ The goldens use 13 dialects: the five national classes, the three city classes, 
 
 | Corpus | Records |
 | --- | --- |
-| Module functions and constants | 2,177 |
-| Test strings, token properties, national classes | 9,255 |
-| Test strings, IPA, the other eight dialects | 14,808 |
+| Module functions and constants | 2,341 |
+| Test strings, token properties, national classes | 10,075 |
+| Test strings, IPA, the other eight dialects | 16,120 |
 | The 4,541 unique words of the 10,093 gold-TSV rows, IPA, 13 dialects | 59,033 |
 | Every 20th gold-TSV word, token properties, national classes | 1,140 |
 | Unicode probes | 228 |
 | Seeded fuzz | 1,500 |
 | Tokens built directly, parent links, diaeresis vowels and rare graphemes | 308 |
-| Total | 88,449 |
+| Total | 90,745 |
 
 The rare graphemes are the tetragraphs of "Uruguai" and "quais", the triphthong of "saguão", the final o after a silent h in "Soho", and the atonic "pra". Only caller syllables, such as `["assu", "mpção"]`, put an archaic `mpç` or `mpt` grapheme in a word, so the goldens build these words with their syllables.
 
@@ -664,25 +670,6 @@ orthography2ipa.cpp keeps its spec cache in a global map with no lock. The token
 | `AccentOverlay.from_json` | method | `tugaphone::accent::AccentOverlay::from_json` | phase 3 |
 | `force_accent` | function | `tugaphone::accent::force_accent` | phase 3 |
 <!-- /inventory:accent -->
-
-### tugaphone.plugin
-
-The OVOS plugin registration is not applicable. A Python package registers a plugin with an entry point, and C++ has no entry points. tugaphone declares no entry point for `SilabificadorSyllabifier`. A program that wants it as the syllabifier of an engine passes it in the Pipeline: `orthography2ipa::Pipeline{lexicon, std::make_shared<tugaphone::plugin::SilabificadorSyllabifier>()}`. orthography2ipa.cpp has no plugin discovery. `orthography2ipa::get_syllabifier` and `orthography2ipa::register_syllabifier_plugin` are deprecated and have no effect.
-
-<!-- inventory:plugin -->
-| Python name | Kind | C++ name | Status |
-| --- | --- | --- | --- |
-| `TugaphoneG2PPlugin` | class | `tugaphone::plugin::TugaphoneG2PPlugin` | phase 4 |
-| `TugaphoneG2PPlugin.lang` | attribute | `tugaphone::plugin::TugaphoneG2PPlugin::lang` | phase 4 |
-| `TugaphoneG2PPlugin.contact` | attribute | `tugaphone::plugin::TugaphoneG2PPlugin::contact` | phase 4 |
-| `TugaphoneG2PPlugin.language_codes` | method | `tugaphone::plugin::TugaphoneG2PPlugin::language_codes` | phase 4 |
-| `TugaphoneG2PPlugin.transcribe` | method | `tugaphone::plugin::TugaphoneG2PPlugin::transcribe` | phase 4 |
-| `TugaphoneG2PPlugin.transcribe_word` | method | `tugaphone::plugin::TugaphoneG2PPlugin::transcribe_word` | phase 4 |
-| `TugaphoneG2PPlugin.force_accent` | method | `tugaphone::plugin::TugaphoneG2PPlugin::force_accent` | phase 4 |
-| `SilabificadorSyllabifier` | class | `tugaphone::plugin::SilabificadorSyllabifier` | phase 4 |
-| `SilabificadorSyllabifier.language_codes` | method | `tugaphone::plugin::SilabificadorSyllabifier::language_codes` | phase 4 |
-| `SilabificadorSyllabifier.syllabify` | method | `tugaphone::plugin::SilabificadorSyllabifier::syllabify` | phase 4 |
-<!-- /inventory:plugin -->
 
 ### Command line
 

@@ -17,6 +17,7 @@
 
 namespace orthography2ipa {
 class G2P;
+struct Pipeline;
 }
 
 namespace tugaphone::lattice_core {
@@ -25,8 +26,15 @@ namespace tugaphone::lattice_core {
 const std::vector<std::string>& VALID_CONTACT();
 
 // _expander(lect)(text): the orthographic rewrites, then the number
-// expansion. The engine runs it on each plain run of the text.
+// expansion. The engine runs it on each plain run of the text. The whitespace
+// at each end of the run stays, and a run of whitespace alone comes back as it is.
 std::string expand(std::string_view text, const std::string& lect);
+
+// The orthography2ipa Pipeline tugaphone runs for lect: the packaged lexicon,
+// the expand step and the homograph marks. G2P(lect, ..., pipeline(lect))
+// gives phonemize(text, lect) with contact "none". Each call returns a new
+// Pipeline. A lect that list_dialects() does not name raises ValueError.
+orthography2ipa::Pipeline pipeline(const std::string& lect);
 
 // engine(lect): the cached engine of an orthography2ipa lect code. Its
 // Pipeline holds expand() as `expand` and the bifonia marks of `lect` as

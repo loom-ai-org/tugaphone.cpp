@@ -99,6 +99,11 @@ TOKENS = ["1", "0", "01", "21", "1º", "1ª", "1 º", "2 ª", "1.º", "3.ª", "2
           "123456789012345678901234567890", "9" * 400, "1" + "0" * 4300, "1" + "0" * 4299, "2e400", "1e-400",
           "1,2,3", "1.5,3", "5%", "5kg", "1x2", "²", "1²", " 1 ", "1 ", "0.0", "00", "-0", "-0.0",
           "1e1.5", "1.5e1.5", "e", "E", "1e09", "1e-09", "1 e 5", "1.e5", "1e5.", "1,e5", "3,14", "3,14159"]
+# split_edges: punctuation and math or modifier symbols at each edge, signs
+# before a digit, and percent and per-mille signs at the end.
+EDGE_LEADS = ["", "[", "—", "–", "-", "+", "−", "=", "^", "§", "¨", "<", "--", "-+", "«-", "[−", "%"]
+EDGE_TRAILS = ["", "]", ";", "%", "‰", "%.", "‰;", "=", "^", "—", "%%", "-", "+", "]%", "§"]
+TOKENS += [f"{lead}{n}{trail}" for lead in EDGE_LEADS for n in ("7", "2,5", "x", "") for trail in EDGE_TRAILS]
 NEIGHBOURS = [None, "", "casas", "casa", "horas", "hora", "a", "as", "o", "os", "da", "dos", "º", "ª", "kg", "€",
               "Maria", "de", "pessoas", "vezes", "à", "às", "anos", "andar", "lugar", "vez", "km", "%"]
 
@@ -107,7 +112,7 @@ def token_records(tokens):
     out = []
     for w in tokens:
         out.append(["token", w, [
-            list(NP.split_trailing_punctuation(w)), num(common.call(NP.to_int, w)), common.call(NP.is_int, w),
+            list(NP.split_trailing_punctuation(w)), list(NP.split_edges(w)), num(common.call(NP.to_int, w)), common.call(NP.is_int, w),
             num(common.call(NP.to_float, w)), common.call(NP.is_float, w), common.call(NP.is_decimal, w),
             common.call(NP.is_scientific_notation, w),
             [common.call(NP.pronounce_scientific, w, b, s) for b in (False, True) for s in (None, "short", "long")],
@@ -156,6 +161,20 @@ def sentence_records(texts, langs, stricts=(True, False), scales=(None,)):
             for scale in scales:
                 out.append(["normalize_numbers", text, lang, strict, scale,
                             common.call(normalize_numbers, text, lang, strict, scale)])
+    return out
+
+
+def unread_records(texts):
+    """The UnreadFormWarning texts of normalize_numbers, which every other record ignores."""
+    from tugaphone.number_utils import UnreadFormWarning
+    out = []
+    for i, text in enumerate(texts):
+        lang = ("pt-PT", "pt-BR")[i % 2]
+        with warnings.catch_warnings(record=True) as seen:
+            warnings.simplefilter("always")
+            result = common.call(normalize_numbers, text, lang, False)
+        out.append(["unread", text, lang,
+                    [result, [str(w.message) for w in seen if issubclass(w.category, UnreadFormWarning)]]])
     return out
 
 
@@ -229,4 +248,5 @@ def corpora(repo):
         ("glued", sentence_records(glued_texts(), ["pt-PT", "pt-BR"])),
         ("unicode", sentence_records(probes, ["pt-PT", "pt-BR"])),
         ("fuzz", sentence_records(fuzz, langs, scales=(None, "short"))),
+        ("unread", unread_records(common.unique([f"a {t} b" for t in tokens] + test_strings[:400]))),
     ]

@@ -26,6 +26,7 @@ bool is_word(char32_t c);     // re's \w: str.isalnum() or '_'
 bool is_alnum(char32_t c);    // str.isalnum()
 bool is_alpha(char32_t c);    // str.isalpha()
 bool is_upper(char32_t c);    // str.isupper()
+bool is_edge_mark(char32_t c);  // unicodedata.category(c) is P*, Sm or Sk
 bool is_digit(char32_t c);    // str.isdigit()
 bool is_decimal(char32_t c);  // str.isdecimal(), re's \d
 int decimal_value(char32_t c);  // unicodedata.decimal(c, -1)
@@ -69,5 +70,10 @@ std::string read_file(const std::string& path);
 // registry.resolve_lect(lang) from the Python caller that `call_site` names. The
 // default warning filter prints a text once for each caller.
 std::string resolve_lect_from(std::string_view lang, std::string_view call_site);
+
+// warnings.warn(message, category, stacklevel=2) from `call_site`. The default
+// Python filter prints a text once for each category and location of the
+// caller. registry::set_warning_handler() replaces the output.
+void warn(std::string_view call_site, const std::string& message, std::string_view category = "UserWarning");
 
 }  // namespace tugaphone::detail

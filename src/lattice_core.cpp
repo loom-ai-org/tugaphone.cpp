@@ -1,5 +1,6 @@
 #include "tugaphone/lattice_core.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -11,6 +12,7 @@
 
 #include "detail.hpp"
 #include "o2i_registry.hpp"
+#include "unicode_norm.hpp"
 #include "tugaphone/number_utils.hpp"
 #include "tugaphone/registry.hpp"
 #include "tugaphone/text_normalization.hpp"
@@ -54,19 +56,31 @@ std::map<std::string, std::string> packaged_lexicon(const std::string& lect) {
     return lexicon;
 }
 
+o2i::Pipeline make_pipeline(const std::string& lect) {
+    const auto& packaged = registry::PACKAGED_LEXICON_LECTS();
+    return o2i::Pipeline{packaged.count(lect) ? packaged_lexicon(lect) : std::map<std::string, std::string>{},
+                         nullptr, [lect](const std::string& text) { return lattice_core::expand(text, lect); },
+                         [lect](const std::string& text) { return bifonia::add_extra_diacritics(text, lect); }};
+}
+
+// lattice_core.pipeline's check. list_dialects() takes the registry mutex the
+// first time, so this runs before the caller takes it.
+void require_lect(const std::string& lect) {
+    const std::vector<std::string> lects = registry::list_dialects();
+    if (std::find(lects.begin(), lects.end(), lect) == lects.end()) {
+        throw ValueError(detail::py_str_repr(u(lect)) +
+                         " is not a tugaphone lect; pass a code of list_dialects(), "
+                         "for example the result of resolve_lect()");
+    }
+}
+
 // The caller holds detail::o2i_registry_mutex().
 const o2i::G2P& engine_locked(const std::string& lect) {
     auto& slot = engines()[lect];
     if (!slot) {
         try {
-            const auto& packaged = registry::PACKAGED_LEXICON_LECTS();
-            const o2i::Pipeline pipeline{
-                packaged.count(lect) ? packaged_lexicon(lect) : std::map<std::string, std::string>{},
-                nullptr,
-                [lect](const std::string& text) { return lattice_core::expand(text, lect); },
-                [lect](const std::string& text) { return bifonia::add_extra_diacritics(text, lect); }};
             slot = std::make_unique<o2i::G2P>(lect, std::map<std::string, std::vector<std::string>>{}, "", false,
-                                              true, true, true, nullptr, nullptr, pipeline);
+                                              true, true, true, nullptr, nullptr, make_pipeline(lect));
         } catch (...) {
             engines().erase(lect);
             throw;
@@ -88,10 +102,28 @@ const std::vector<std::string>& VALID_CONTACT() {
 }
 
 std::string expand(std::string_view text, const std::string& lect) {
-    return number_utils::normalize_numbers(text_normalization::normalize_orthography(text, lect), lect);
+    // The engine joins the runs and the forced words into one sentence for
+    // `mark`, so the whitespace at each end of a run stays.
+    const U32 t = u(text);
+    size_t b = 0, e = t.size();
+    while (b < e && detail::is_space(t[b])) ++b;
+    while (e > b && detail::is_space(t[e - 1])) --e;
+    if (b == e) return std::string(text);
+    const std::u32string_view v(t);
+    return s8(v.substr(0, b)) +
+           number_utils::normalize_numbers(
+               text_normalization::normalize_orthography(s8(v.substr(b, e - b)), lect), lect) +
+           s8(v.substr(e));
+}
+
+o2i::Pipeline pipeline(const std::string& lect) {
+    require_lect(lect);
+    const std::lock_guard<std::mutex> lock(detail::o2i_registry_mutex());
+    return make_pipeline(lect);
 }
 
 const o2i::G2P& engine(const std::string& lect) {
+    require_lect(lect);
     const std::lock_guard<std::mutex> lock(detail::o2i_registry_mutex());
     return engine_locked(lect);
 }

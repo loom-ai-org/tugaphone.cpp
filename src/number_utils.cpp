@@ -1,10 +1,12 @@
 #include "tugaphone/number_utils.hpp"
 
 #include <algorithm>
+#include <tuple>
 
 #include <tugalex/tugalex.hpp>
 
 #include "detail.hpp"
+#include "unicode_norm.hpp"
 #include "tugaphone/ovos_number_parser.hpp"
 
 namespace tugaphone::number_utils {
@@ -28,6 +30,22 @@ std::pair<U32, U32> split_trailing(U32View word) {
     size_t i = word.size();
     while (i > 0 && kTrailing.find(word[i - 1]) != U32::npos) --i;
     return {U32(word.substr(0, i)), U32(word.substr(i))};
+}
+
+// NumberParser.split_edges: the punctuation and math or modifier symbols at
+// the edges of a token. A sign right before a digit stays in the core, and so
+// does a percent or per-mille sign at the end.
+const U32 kNumberSigns = from_utf8(NumberParser::NUMBER_SIGNS);
+const U32 kNumberSuffixes = from_utf8(NumberParser::NUMBER_SUFFIXES);
+
+std::tuple<U32, U32, U32> split_edges_u(U32View word) {
+    size_t i = 0, j = word.size();
+    while (i < j && detail::is_edge_mark(word[i]) &&
+           !(kNumberSigns.find(word[i]) != U32::npos && i + 1 < word.size() && detail::is_digit(word[i + 1]))) {
+        ++i;
+    }
+    while (j > i && detail::is_edge_mark(word[j - 1]) && kNumberSuffixes.find(word[j - 1]) == U32::npos) --j;
+    return {U32(word.substr(0, i)), U32(word.substr(i, j - i)), U32(word.substr(j))};
 }
 
 std::optional<BigInt> to_int_u(U32View word) {
@@ -256,6 +274,11 @@ std::pair<std::string, std::string> NumberParser::split_trailing_punctuation(std
     return {to_utf8(core), to_utf8(trail)};
 }
 
+std::tuple<std::string, std::string, std::string> NumberParser::split_edges(std::string_view word) {
+    const auto [lead, core, trail] = split_edges_u(from_utf8(word));
+    return {to_utf8(lead), to_utf8(core), to_utf8(trail)};
+}
+
 std::optional<BigInt> NumberParser::to_int(std::string_view word) { return to_int_u(from_utf8(word)); }
 bool NumberParser::is_int(std::string_view word) { return to_int(word).has_value(); }
 std::optional<double> NumberParser::to_float(std::string_view word) { return to_float_u(from_utf8(word)); }
@@ -299,7 +322,7 @@ std::string normalize_numbers(std::string_view text, std::string_view lang, bool
     // float() also reads "nan", "inf" and "infinity", which are words in text.
     auto is_number = [](const std::optional<U32>& token) {
         if (!token) return false;
-        const U32 core = split_trailing(detail::lstrip(*token, kLeading)).first;
+        const U32 core = std::get<1>(split_edges_u(*token));
         return std::any_of(core.begin(), core.end(), detail::is_digit) && (is_int_u(core) || is_float_u(core));
     };
     auto unit_symbol = [](const std::optional<U32>& token) -> std::optional<U32> {
@@ -319,9 +342,7 @@ std::string normalize_numbers(std::string_view text, std::string_view lang, bool
             skip_unit = false;
             continue;
         }
-        const U32 body = detail::lstrip(word, kLeading);
-        const U32 lead = word.substr(0, word.size() - body.size());
-        auto [core, trail] = split_trailing(body);
+        auto [lead, core, trail] = split_edges_u(word);
         if (!is_number(core)) {
             normalized.push_back(word);
             continue;
@@ -386,7 +407,18 @@ std::string normalize_numbers(std::string_view text, std::string_view lang, bool
             normalized.push_back(word);
         }
     }
-    return to_utf8(detail::join(normalized, U" "));
+    // The lattice has no reading for a digit and drops it, so each form that
+    // still holds one is named in an UnreadFormWarning.
+    const U32 joined = detail::join(normalized, U" ");
+    for (const U32& form : detail::split_ws(joined)) {
+        if (std::any_of(form.begin(), form.end(), detail::is_decimal)) {
+            detail::warn("normalize_numbers",
+                         std::string(lang) + ": no reading for " + detail::py_str_repr(form) + " in " +
+                             detail::py_str_repr(from_utf8(text)) + "; its digits are dropped",
+                         UnreadFormWarning);
+        }
+    }
+    return to_utf8(joined);
 }
 
 }  // namespace tugaphone::number_utils

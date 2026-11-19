@@ -71,7 +71,7 @@ def record(code):
     if not isinstance(inventory, dict):
         inventory = [type(inventory).__name__, inventory.dialect_code]
     return ["code", code, common.call(registry.normalize_dialect_code, code), resolve_with_warnings(code), resolved,
-            region, common.call(registry.default_contact, code), inventory]
+            region, common.call(registry.default_contact, code), inventory, common.call(registry.is_supported, code)]
 
 
 def corpora(repo):

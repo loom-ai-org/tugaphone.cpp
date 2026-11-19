@@ -51,7 +51,7 @@ std::string record_registry(const Value& v) {
                guard([&] { return J(rg::default_contact(code)); }) + "," + guard([&] {
                    const auto inv = rg::get_dialect_inventory(code);
                    return list({J(inv.type_name()), J(inv.dialect_code)});
-               }) + "]";
+               }) + "," + guard([&] { return J(rg::is_supported(code)); }) + "]";
     }
     return "unknown call " + fn;
 }

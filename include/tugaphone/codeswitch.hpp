@@ -31,6 +31,9 @@ using Run = std::pair<std::optional<std::string>, std::string>;
 // every detected contact token through that language. An abbreviation that
 // only Portuguese reads in its context stays Portuguese in every mode
 // (text_normalization::stays_portuguese): "Dr.", "Av.", "Cap." and its number.
+// A <phoneme ph="…">…</phoneme> element is one token, spaces and all, and it is
+// always Portuguese. Malformed markup throws the
+// orthography2ipa::markup::MarkupError that the engine throws for the same text.
 std::vector<Run> split_runs(std::string_view text, std::string_view contact, std::string_view default_side = "en");
 
 }  // namespace tugaphone::codeswitch

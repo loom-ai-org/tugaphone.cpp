@@ -1,5 +1,5 @@
 // Ten threads each make the first call of a package entry point: the
-// TugaPhonemizer methods, the plugin classes and the command line, from cold
+// TugaPhonemizer methods, the lattice pipeline and the command line, from cold
 // caches. Under -fsanitize=thread a data race fails the test. In every build
 // each result must equal the result of the same call made afterwards from
 // one thread.
@@ -10,8 +10,10 @@
 #include <thread>
 #include <vector>
 
+#include <orthography2ipa/orthography2ipa.hpp>
+
 #include "cli.hpp"
-#include "tugaphone/plugin.hpp"
+#include "tugaphone/lattice_core.hpp"
 #include "tugaphone/tugaphone.hpp"
 
 namespace {
@@ -24,30 +26,18 @@ std::string cli(const std::vector<std::string>& args) {
     return std::to_string(status) + "|" + out.str() + "|" + err.str();
 }
 
-std::string join(const std::vector<std::string>& items) {
-    std::string out;
-    for (const auto& item : items) out += item + "·";
-    return out;
-}
-
 }  // namespace
 
 int main() {
     using tugaphone::TugaPhonemizer;
-    using tugaphone::plugin::SilabificadorSyllabifier;
-    using tugaphone::plugin::TugaphoneG2PPlugin;
     const std::vector<std::function<std::string()>> calls = {
         [] { return TugaPhonemizer().phonemize_sentence(kText, "pt-BR", "auto"); },
         [] { return TugaPhonemizer().phonemize_sentence(kText, "pt-AO", "en"); },
-        [] { return TugaphoneG2PPlugin("pt-PT", "es").transcribe(kText); },
-        [] {
-            orthography2ipa::sentence::WordContext ctx;
-            ctx.lang = std::string("pt-MZ");
-            return TugaphoneG2PPlugin("pt-BR").transcribe_word("jogo", &ctx);
-        },
-        [] { return TugaphoneG2PPlugin("pt-BR").force_accent("o vinho verde", "pt-PT-x-porto", "respell"); },
+        [] { return TugaPhonemizer().phonemize_sentence(kText, "pt-PT", "es"); },
+        [] { return TugaPhonemizer().phonemize_sentence("jogo", "pt-MZ"); },
+        [] { return TugaPhonemizer::force_accent("o vinho verde", "pt-PT-x-porto", "respell", "pt-BR"); },
         [] { return TugaPhonemizer::force_accent("a tia", "pt-BR", "respell", "pt-PT"); },
-        [] { return join(SilabificadorSyllabifier().syllabify("paralelepípedo")); },
+        [] { return tugaphone::lattice_core::pipeline("pt-BR").expand(" Tenho 23 anos. "); },
         [] { return std::string(TugaPhonemizer::is_supported("pt-pt-x-azores") ? "true" : "false"); },
         [] { return cli({"phonemize", kText, "--lect", "pt-PT-x-porto"}); },
         [] { return cli({"list"}); },

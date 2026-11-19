@@ -166,6 +166,14 @@ def corpora(repo):
                                  for w in packaged for lect in ("pt-PT", "pt-BR")]))
     out.append(("process_lexicon", [process_lexicon(lect, w) for lect in ("pt-PT", "pt-BR", "pt-AO", "pt-PT-x-porto")
                                     for w in ("gato", "basebol", "táxi")]))
+    def pipeline_record(lect):
+        def run():
+            pipeline = lc.pipeline(lect)
+            return [len(pipeline.lexicon), pipeline.expand(" Tenho 23 anos, Sr. Silva. "),
+                    pipeline.mark("Eu jogo o jogo.")]
+        return ["pipeline", lect, common.call(run), common.call(lambda: lc.engine(lect).transcribe("o jogo"))]
+    out.append(("pipeline", [pipeline_record(lect) for lect in
+                             NATIONAL + ["pt-pt", "br", "pt", "pt-PT-x-medieval", "en-US", "", "xx"]]))
     out.append(("validate_contact", [["validate_contact", c, common.call(lc._validate_contact, c)]
                                      for c in contacts + ["auto", "es", "fr", "en"]]))
     alphabet = "abcdefghijlmnopqrstuvxzçãõáéíóúâêôàü AEOÇ-.,!?;:'123º%€"
