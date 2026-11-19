@@ -7,6 +7,7 @@
 #include <set>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -25,6 +26,9 @@ public:
     static constexpr std::array<std::string_view, 2> ORDINAL_TOKENS = {ORDINAL_MALE, ORDINAL_FEMALE};
     static constexpr std::string_view LEADING_PUNCTUATION = "(“\"'¿¡«";
     static constexpr std::string_view TRAILING_PUNCTUATION = ".,;:!?)\"”»…";
+    // A sign or a percent sign belongs to the number, not to the text around it.
+    static constexpr std::string_view NUMBER_SIGNS = "+-−";
+    static constexpr std::string_view NUMBER_SUFFIXES = "%‰";
 
     static const std::set<std::string>& LABEL_HEADS();
     static const std::set<std::string>& PLURAL_FUNCTION_WORDS();
@@ -54,6 +58,10 @@ public:
                                              std::optional<std::string> scale = std::nullopt);
 
     static std::pair<std::string, std::string> split_trailing_punctuation(std::string_view word);
+    // (lead, core, trail): the punctuation and math or modifier symbols at the
+    // edges of word. A sign right before a digit and a trailing % or ‰ stay in
+    // the core.
+    static std::tuple<std::string, std::string, std::string> split_edges(std::string_view word);
     static std::optional<BigInt> to_int(std::string_view word);
     static bool is_int(std::string_view word);
     static std::optional<double> to_float(std::string_view word);
@@ -68,6 +76,12 @@ public:
     static std::string get_number_gender(std::string_view word, std::optional<std::string> prev_word = std::nullopt,
                                          std::optional<std::string> next_word = std::nullopt);
 };
+
+// The warning category of a written form with digits that tugaphone has no
+// reading for. The lattice drops a digit, so normalize_numbers names each such
+// form of its output, through the handler of registry::set_warning_handler()
+// or on standard error as "UnreadFormWarning: <text>".
+inline constexpr std::string_view UnreadFormWarning = "UnreadFormWarning";
 
 // Spell out every numeric token of `text`. With strict, a token that cannot
 // be spelled raises the Python exception; without it the token stays.

@@ -104,7 +104,7 @@ std::string record_lattice_core(const Value& v) {
     if (fn == "force_accent") {
         return head(v) + guard([&] { return J(tugaphone::accent::force_accent(v[1].str, v[2].str, v[3].str)); }) + "]";
     }
-    if (fn == "normalize") return head(v) + guard([&] { return J(lc::normalize(v[1].str, v[2].str)); }) + "]";
+    if (fn == "expand") return head(v) + guard([&] { return J(lc::expand(v[1].str, v[2].str)); }) + "]";
     if (fn == "VALID_CONTACT") return "[" + J(fn) + "," + J(lc::VALID_CONTACT()) + "]";
     if (fn == "validate_contact") {
         return head(v) + guard([&] {
@@ -119,6 +119,14 @@ std::string record_lattice_core(const Value& v) {
         return head(v) + guard([&] { return J(o2i::G2P(v[1].str).transcribe_word(v[2].str)); }) + "]";
     }
     if (fn == "process_lexicon") return head(v) + process_lexicon(v[1].str, v[2].str) + "]";
+    if (fn == "pipeline") {
+        const std::string& lect = v[1].str;
+        return "[" + J(fn) + "," + J(lect) + "," + guard([&] {
+                   const o2i::Pipeline pipeline = lc::pipeline(lect);
+                   return list({J(static_cast<long long>(pipeline.lexicon->size())),
+                                J(pipeline.expand(" Tenho 23 anos, Sr. Silva. ")), J(pipeline.mark("Eu jogo o jogo."))});
+               }) + "," + guard([&] { return J(lc::engine(lect).transcribe("o jogo")); }) + "]";
+    }
     return "unknown call " + fn;
 }
 

@@ -25,6 +25,7 @@ using accent::RespellRule;
 using accent::Transform;
 using lattice_core::phonemize;
 using registry::list_dialects;
+using registry::is_supported;
 using registry::resolve_lect;
 
 // Dialect-aware Portuguese phonemization on the orthography2ipa lattice. Every
@@ -49,8 +50,8 @@ public:
     static std::string force_accent(std::string_view text, std::string_view lect, std::string_view mode = "ipa",
                                     std::string_view base_lect = "pt-PT", const AccentOverlay* overlay = nullptr);
 
-    // Whether `lang` resolves to a known Portuguese lect. resolve_lect falls
-    // back to pt-PT, so this is true for every string.
+    // Whether `lang` names a tugaphone lect, itself or through an alias
+    // (registry::is_supported).
     static bool is_supported(std::string_view lang);
 };
 

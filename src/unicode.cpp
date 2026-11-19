@@ -148,6 +148,7 @@ bool is_word(char32_t c) { return in_ranges(kWord, c); }
 bool is_alnum(char32_t c) { return c != '_' && in_ranges(kWord, c); }
 bool is_alpha(char32_t c) { return in_ranges(kIsAlpha, c); }
 bool is_upper(char32_t c) { return in_ranges(kIsUpper, c); }
+bool is_edge_mark(char32_t c) { return in_ranges(kEdgeMark, c); }
 bool is_digit(char32_t c) { return in_ranges(kIsDigit, c); }
 
 int decimal_value(char32_t c) {

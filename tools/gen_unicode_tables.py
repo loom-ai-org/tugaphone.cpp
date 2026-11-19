@@ -3,7 +3,8 @@
 The C++ port must match Python's str.lower, str.upper, the title case that
 str.capitalize gives the first character, str.isspace, str.isalnum (the `\\w`
 class of `re`), str.isalpha, str.isupper, str.isdigit, the decimal digits of
-`re`'s `\\d` and of int() and float(). The tables are taken from Python itself rather than from ICU, so the
+`re`'s `\\d` and of int() and float(), and the punctuation, math and
+modifier symbol categories (P*, Sm, Sk) that NumberParser.split_edges strips. The tables are taken from Python itself rather than from ICU, so the
 two agree on the same Unicode version; the version is written into the
 generated file.
 
@@ -76,6 +77,8 @@ def main():
                        ("kIsDigit", str.isdigit),
                        ("kCaseIgnorable", ignorable),
                        ("kCased", cased),
+                       ("kEdgeMark", lambda c: unicodedata.category(c) in ("Sm", "Sk")
+                        or unicodedata.category(c)[0] == "P"),
                       ):
         rs = ranges(pred)
         w(f"static const char32_t {name}[{len(rs)}][2] = {{\n")

@@ -25,6 +25,13 @@ extern const std::string LEXICON_REGION_REMOVAL_VERSION;
 // subtags removed one at a time; "pt-PT" when nothing resolves. A code that
 // does not name a lect itself warns, because the caller gets another variety.
 std::string resolve_lect(std::string_view lang = "pt-PT");
+
+// Whether lang names a tugaphone lect, itself or through an alias. A tag that
+// resolve_lect answers only by its fallback is not supported: another
+// language ("en-US"), a lect written in another orthography
+// ("pt-PT-x-medieval") and an unknown sub-tag ("pt-PT-x-unknown") all return
+// false.
+bool is_supported(std::string_view lang);
 // Receives the text of each warning of this module, where Python calls
 // warnings.warn. With no handler, the default writes "UserWarning: <text>" to
 // stderr, once for each text and call site, as the default Python filter does.
@@ -42,6 +49,8 @@ std::vector<std::string> list_dialects();
 // "es" for a lect in contact with Spanish (pt-UY), "en" otherwise.
 std::string default_contact(std::string_view lect);
 // The national DialectInventory nearest to the resolved lect.
+[[deprecated("get_dialect_inventory() is deprecated and will be removed in tugaphone 2.0.0, "
+             "together with tugaphone.dialects.")]]
 dialects::DialectInventory get_dialect_inventory(std::string_view lang = "pt-PT");
 // Deprecated alias for resolve_lect. Python also emits a DeprecationWarning.
 std::string resolve_dialect(std::string_view lang = "pt-PT");

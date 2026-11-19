@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include <orthography2ipa/markup.hpp>
+
 #include "../json_line.hpp"
 #include "tugaphone/errors.hpp"
 #include "tugaphone/pynum.hpp"
@@ -48,12 +50,15 @@ inline std::string list(const std::vector<std::string>& parts) {
     return out + "]";
 }
 
-// The result of fn, or {"err":"<Python class>"} when it raises.
+// The result of fn, or {"err":"<Python class>"} when it raises. A forced
+// pronunciation that the spec cannot read raises orthography2ipa's MarkupError.
 inline std::string guard(const std::function<std::string()>& fn) {
     try {
         return fn();
     } catch (const tugaphone::Error& e) {
         return "{\"err\":" + J(e.python_type()) + "}";
+    } catch (const orthography2ipa::markup::MarkupError&) {
+        return "{\"err\":\"MarkupError\"}";
     }
 }
 

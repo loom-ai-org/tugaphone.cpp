@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(tugaphone VERSION 1.6.2 LANGUAGES CXX)
+project(tugaphone VERSION 1.7.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,9 +23,9 @@ include(CMakePackageConfigHelpers)
 # The four C++ ports tugaphone uses. By default each one builds from its pinned
 # submodule; with TUGAPHONE_USE_SYSTEM_DEPS they come from installed packages.
 if(TUGAPHONE_USE_SYSTEM_DEPS)
-    find_package(silabificador 2.1.1 CONFIG REQUIRED)
+    find_package(silabificador 2.1.11 CONFIG REQUIRED)
     find_package(tugalex 2.2.2 CONFIG REQUIRED)
-    find_package(bifonia 0.3.7 CONFIG REQUIRED)
+    find_package(bifonia 0.3.9 CONFIG REQUIRED)
     find_package(orthography2ipa CONFIG REQUIRED)
 else()
     foreach(_dep silabificador tugalex bifonia orthography2ipa)
@@ -98,7 +98,6 @@ add_library(tugaphone
     src/lattice_core.cpp
     src/tokenizer.cpp
     src/tugaphone.cpp
-    src/plugin.cpp
     src/pyio.cpp
     src/argparse.cpp
     src/cli.cpp
@@ -111,8 +110,8 @@ target_include_directories(tugaphone
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
-# plugin.hpp derives from orthography2ipa::SyllabifierPlugin, so orthography2ipa
-# is part of the public interface.
+# lattice_core.hpp returns an orthography2ipa::Pipeline and an
+# orthography2ipa::G2P, so orthography2ipa is part of the public interface.
 target_link_libraries(tugaphone
     PUBLIC tugalex::tugalex orthography2ipa::orthography2ipa
     PRIVATE bifonia::bifonia silabificador::silabificador
@@ -198,7 +197,6 @@ if(TUGAPHONE_BUILD_TESTS)
         tests/parity/accent.cpp
         tests/parity/lattice_core.cpp
         tests/parity/package.cpp
-        tests/parity/plugin.cpp
         tests/parity/cli.cpp
         tests/parity/benchmark.cpp
         tests/parity/tokenizer.cpp

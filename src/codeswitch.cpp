@@ -4,12 +4,14 @@
 #include <mutex>
 #include <set>
 
+#include <orthography2ipa/markup.hpp>
 #include <orthography2ipa/orthography2ipa.hpp>
 
 #include "codeswitch_internal.hpp"
 #include "detail.hpp"
 #include "json.hpp"
 #include "o2i_registry.hpp"
+#include "pyre.hpp"
 #include "text_normalization_internal.hpp"
 
 namespace tugaphone::codeswitch {
@@ -202,13 +204,25 @@ bool is_contact(std::string_view token, const langdetect::MarkovLangDetector* de
 
 std::vector<Run> split_runs(std::string_view text, std::string_view contact, std::string_view default_side,
                             const langdetect::MarkovLangDetector* detector) {
-    const std::vector<U32> tokens = detail::split_ws(detail::u(text));
+    // _TOKEN: a run of non-space characters in which a whole
+    // <phoneme …>…</phoneme> element counts as one unit, spaces and all.
+    static const pyre::Pattern token_re(
+        UR"((?:<phoneme(?=[\s>])(?:[^>"']|"[^"]*"|'[^']*')*>.*?</phoneme\s*>|\S)+)",
+        pyre::DOTALL | pyre::IGNORECASE);
+    static const pyre::Pattern phoneme_tag_re(UR"(<phoneme(?=[\s>]))", pyre::IGNORECASE);
+    // Malformed markup raises the MarkupError that the engine raises for the same text.
+    orthography2ipa::markup::parse_markup(std::string(text));
+    const U32 t = detail::u(text);
+    std::vector<U32> tokens;
+    for (const auto& [b, e] : token_re.finditer_spans(t)) tokens.emplace_back(t.substr(b, e - b));
     std::vector<Run> runs;
     if (contact == "none") {
-        for (const U32& t : tokens) runs.emplace_back(std::nullopt, detail::s8(t));
+        for (const U32& token : tokens) runs.emplace_back(std::nullopt, detail::s8(token));
         return runs;
     }
+    // A <phoneme> element is always Portuguese: the Portuguese engine reads its markup.
     auto route = [&](const std::string& token) -> std::optional<std::string> {
+        if (!phoneme_tag_re.finditer_spans(detail::u(token)).empty()) return std::nullopt;
         if (contact == "auto") return classify(token, default_side, detector);
         if (is_contact(token, detector)) return std::string(contact);
         return std::nullopt;

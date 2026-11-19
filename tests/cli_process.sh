@@ -21,13 +21,16 @@ for var in TUGALEX_DATA_DIR BIFONIA_DATA_DIR; do
 done
 
 # A lexicon TSV made by hand reads as Python reads it: a key keeps its case, and
-# a line without two fields does not count. The expected line is the output of
-# the Python tugaphone of PARITY.md with the same TSV.
+# a line without two fields does not count. An exception wins over a patch for
+# the same word, and a word in the patches alone reaches the output. The
+# expected line is the output of the Python tugaphone of PARITY.md with the
+# same TSV files.
 data=$(mktemp -d "$scratch/data-XXXXXX")
 cp -R "$root/data/." "$data"
 printf 'Gato\tˈmjaw\ncão\tˈbɐ̃w\tx\nsolo\npato\tˈkwak\r\nrato\tˈʃiʃ\n' > "$data/o2i-lexicons/pt-PT/infopedia.tsv"
-out=$(TUGAPHONE_DATA_DIR="$data" "$cli" phonemize --lect pt-PT "o Gato, o gato, o cão, o solo, o pato e o rato")
-if [ "$out" != "u ˈɡatu u ˈɡatu u ˈkɐ̃w̃ u ˈsɔlu u ˈkwak i u ˈʃiʃ" ]; then
+printf 'rato\tˈpɐtʃ\nmato\tˈmmm\n' > "$data/o2i-lexicons/patches/pt-PT/infopedia.tsv"
+out=$(TUGAPHONE_DATA_DIR="$data" "$cli" phonemize --lect pt-PT "o Gato, o gato, o cão, o solo, o pato, o rato e o mato")
+if [ "$out" != "u ˈɡatu u ˈɡatu u ˈkɐ̃w̃ u ˈsɔlu u ˈkwak u ˈʃiz i u ˈmmm" ]; then
     echo "FAIL hand-made lexicon TSV: $out"
     failed=1
 fi
@@ -54,6 +57,20 @@ done
 out=$(TUGAPHONE_DATA_DIR="$data" "$cli" phonemize --lect pt-AO "o gato")
 if [ "$out" != "ʊ ˈɡatʊ" ]; then
     echo "FAIL pt-AO without the pt-PT lexicon: $out"
+    failed=1
+fi
+
+# The patch file is required too. With the exception file back and no patch
+# file, the lect fails with LookupError, as orthography2ipa.packaged_lexicon
+# with patches=True does. Python adds the list of installed codes.
+rm -f "$data/o2i-lexicons/pt-PT/a.tsv" "$data/o2i-lexicons/pt-PT/b.tsv"
+mv "$data/infopedia.tsv" "$data/o2i-lexicons/pt-PT/infopedia.tsv"
+mv "$data/o2i-lexicons/patches/pt-PT/infopedia.tsv" "$data/patch.tsv"
+TUGAPHONE_DATA_DIR="$data" "$cli" phonemize --lect pt-PT "o gato" > "$scratch/out" 2> "$scratch/err"
+status=$?
+if [ "$status" != 1 ] || [ "$(cat "$scratch/err")" != "LookupError: no installed package supplies a patch file for 'pt-PT'" ]; then
+    echo "FAIL no patch file: status $status, stderr:"
+    cat "$scratch/err"
     failed=1
 fi
 
@@ -112,5 +129,5 @@ closed_pipe "$cli" list
 check "list | closed pipe" 120 "Exception ignored in: <_io.TextIOWrapper name='<stdout>' mode='w' encoding='utf-8'>
 BrokenPipeError: [Errno 32] Broken pipe" "$(cat "$scratch/status")"
 
-[ "$failed" = 0 ] && echo "cli_process: 7 of 7 checks pass"
+[ "$failed" = 0 ] && echo "cli_process: 8 of 8 checks pass"
 exit "$failed"

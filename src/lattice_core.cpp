@@ -1,5 +1,6 @@
 #include "tugaphone/lattice_core.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -11,6 +12,7 @@
 
 #include "detail.hpp"
 #include "o2i_registry.hpp"
+#include "unicode_norm.hpp"
 #include "tugaphone/number_utils.hpp"
 #include "tugaphone/registry.hpp"
 #include "tugaphone/text_normalization.hpp"
@@ -30,41 +32,46 @@ std::map<std::string, std::unique_ptr<o2i::G2P>>& engines() {
     return map;
 }
 
-// The orthography2ipa normalize stage of one lect: the Python G2P's
-// normalizer= callable, registered as a plugin that answers for any code.
-class Normalizer : public o2i::NormalizePlugin {
-public:
-    explicit Normalizer(std::string lect) : lect_(std::move(lect)) {}
-    std::vector<std::string> language_codes() const override { return {"*"}; }
-    std::string normalize(const std::string& text, const std::string& /*lang*/) const override {
-        return lattice_core::normalize(text, lect_);
-    }
-
-private:
-    std::string lect_;
-};
-
-// _BundledSplitter: sends every word to the bundled splitter of
-// orthography2ipa. A pipeline with no syllabifier takes the plugin that
-// discovery finds, and silabificador is linked for the tokenizer.
-class BundledSplitter : public o2i::SyllabifierPlugin {
-public:
-    std::vector<std::string> language_codes() const override { return {}; }
-    std::vector<std::string> syllabify(const std::string&, const std::string&) const override { return {}; }
-};
-
-// orthography2ipa.packaged_lexicon(lect). The data directory holds the
-// o2i-lexicons package data: one <lect>/<source>.tsv for each lect.
-std::map<std::string, std::string> packaged_lexicon(const std::string& lect) {
+// o2i_lexicons._tsv: the one .tsv file of a data directory.
+std::map<std::string, std::string> read_one(const std::string& dir, const std::string& lect, const std::string& noun) {
     std::vector<fs::path> sources;
     std::error_code ec;
-    for (const auto& entry : fs::directory_iterator(detail::data_path("o2i-lexicons/" + lect), ec)) {
+    for (const auto& entry : fs::directory_iterator(detail::data_path(dir), ec)) {
         if (entry.path().extension() == ".tsv") sources.push_back(entry.path());
     }
     if (sources.size() != 1) {
-        throw Error("LookupError", "no installed package supplies a lexicon file for '" + lect + "'");
+        throw Error("LookupError", "no installed package supplies a " + noun + " file for '" + lect + "'");
     }
     return o2i::load_lexicon(sources[0].string());
+}
+
+// orthography2ipa.packaged_lexicon(lect, patches=True). The data directory
+// holds the o2i-lexicons package data: the exceptions in <lect>/<source>.tsv
+// and the patches in patches/<lect>/<source>.tsv. An exception wins over a
+// patch for the same word.
+std::map<std::string, std::string> packaged_lexicon(const std::string& lect) {
+    auto lexicon = read_one("o2i-lexicons/" + lect, lect, "lexicon");
+    auto patches = read_one("o2i-lexicons/patches/" + lect, lect, "patch");
+    lexicon.merge(patches);
+    return lexicon;
+}
+
+o2i::Pipeline make_pipeline(const std::string& lect) {
+    const auto& packaged = registry::PACKAGED_LEXICON_LECTS();
+    return o2i::Pipeline{packaged.count(lect) ? packaged_lexicon(lect) : std::map<std::string, std::string>{},
+                         nullptr, [lect](const std::string& text) { return lattice_core::expand(text, lect); },
+                         [lect](const std::string& text) { return bifonia::add_extra_diacritics(text, lect); }};
+}
+
+// lattice_core.pipeline's check. list_dialects() takes the registry mutex the
+// first time, so this runs before the caller takes it.
+void require_lect(const std::string& lect) {
+    const std::vector<std::string> lects = registry::list_dialects();
+    if (std::find(lects.begin(), lects.end(), lect) == lects.end()) {
+        throw ValueError(detail::py_str_repr(u(lect)) +
+                         " is not a tugaphone lect; pass a code of list_dialects(), "
+                         "for example the result of resolve_lect()");
+    }
 }
 
 // The caller holds detail::o2i_registry_mutex().
@@ -72,13 +79,8 @@ const o2i::G2P& engine_locked(const std::string& lect) {
     auto& slot = engines()[lect];
     if (!slot) {
         try {
-            const std::string plugin = "tugaphone:" + lect;
-            o2i::register_normalize_plugin(plugin, std::make_shared<Normalizer>(lect));
-            const auto& packaged = registry::PACKAGED_LEXICON_LECTS();
-            const o2i::Pipeline pipeline{packaged.count(lect) ? packaged_lexicon(lect) : std::map<std::string, std::string>{},
-                                         std::make_shared<BundledSplitter>()};
-            slot = std::make_unique<o2i::G2P>(lect, std::map<std::string, std::vector<std::string>>{{"normalize", {plugin}}},
-                                              "", false, true, true, true, nullptr, nullptr, pipeline);
+            slot = std::make_unique<o2i::G2P>(lect, std::map<std::string, std::vector<std::string>>{}, "", false,
+                                              true, true, true, nullptr, nullptr, make_pipeline(lect));
         } catch (...) {
             engines().erase(lect);
             throw;
@@ -99,12 +101,29 @@ const std::vector<std::string>& VALID_CONTACT() {
     return contacts;
 }
 
-std::string normalize(std::string_view text, const std::string& lect) {
-    const std::string orthography = text_normalization::normalize_orthography(text, lect);
-    return bifonia::add_extra_diacritics(number_utils::normalize_numbers(orthography, lect), lect);
+std::string expand(std::string_view text, const std::string& lect) {
+    // The engine joins the runs and the forced words into one sentence for
+    // `mark`, so the whitespace at each end of a run stays.
+    const U32 t = u(text);
+    size_t b = 0, e = t.size();
+    while (b < e && detail::is_space(t[b])) ++b;
+    while (e > b && detail::is_space(t[e - 1])) --e;
+    if (b == e) return std::string(text);
+    const std::u32string_view v(t);
+    return s8(v.substr(0, b)) +
+           number_utils::normalize_numbers(
+               text_normalization::normalize_orthography(s8(v.substr(b, e - b)), lect), lect) +
+           s8(v.substr(e));
+}
+
+o2i::Pipeline pipeline(const std::string& lect) {
+    require_lect(lect);
+    const std::lock_guard<std::mutex> lock(detail::o2i_registry_mutex());
+    return make_pipeline(lect);
 }
 
 const o2i::G2P& engine(const std::string& lect) {
+    require_lect(lect);
     const std::lock_guard<std::mutex> lock(detail::o2i_registry_mutex());
     return engine_locked(lect);
 }
